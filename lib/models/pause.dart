@@ -4,24 +4,26 @@ class Pause {
   final DateTime startAt;
   final DateTime? endAt;
 
-  Pause({
+  const Pause({
     this.id,
     required this.sessionId,
     required this.startAt,
     this.endAt,
   });
 
-  Map<String, dynamic> toMap() => {
-    'id': id,
-    'sessionId': sessionId,
-    'startAt': startAt.toIso8601String(),
-    'endAt': endAt?.toIso8601String(),
-  };
+  bool get isPaused => endAt == null;
 
-  static Pause fromMap(Map<String, dynamic> m) => Pause(
+  factory Pause.fromMap(Map<String, dynamic> m) => Pause(
     id: m['id'] as int?,
-    sessionId: m['sessionId'] as int,
-    startAt: DateTime.parse(m['startAt'] as String),
-    endAt: (m['endAt'] == null) ? null : DateTime.parse(m['endAt'] as String),
+    sessionId: m['session_id'] as int,
+    startAt: DateTime.parse(m['start_at'] as String),
+    endAt: m['end_at'] == null ? null : DateTime.parse(m['end_at'] as String),
   );
+
+  Map<String, dynamic> toMap() => {
+    if (id != null) 'id': id,
+    'session_id': sessionId,
+    'start_at': startAt.toIso8601String(),
+    'end_at': endAt?.toIso8601String(),
+  };
 }

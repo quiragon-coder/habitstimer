@@ -1,14 +1,12 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../models/activity.dart';
-import '../models/session.dart';
 import '../providers.dart';
 import '../services/database_service.dart';
 
 class ActivityControls extends ConsumerStatefulWidget {
-  final Activity activity;
-  const ActivityControls({super.key, required this.activity});
+  final int activityId;
+  const ActivityControls({super.key, required this.activityId});
 
   @override
   ConsumerState<ActivityControls> createState() => _ActivityControlsState();
@@ -17,6 +15,32 @@ class ActivityControls extends ConsumerStatefulWidget {
 class _ActivityControlsState extends ConsumerState<ActivityControls> {
   Timer? _ticker;
   Duration _elapsed = Duration.zero;
+  bool _running = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _init();
+  }
+
+  Future<void> _init() async {
+    final db = ref.read(dbProvider);
+    final s = await db.getRunningSession(widget.activityId);
+    if (s != null) {
+      setState(() {
+        _running = true;
+        _elapsed = DateTime.now().difference(s.startAt);
+      });
+      _startTicker();
+    }
+  }
+
+  void _startTicker() {
+    _ticker?.cancel();
+    _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
+      setState(() => _elapsed += const Duration(seconds: 1));
+    });
+  }
 
   @override
   void dispose() {
@@ -24,57 +48,50 @@ class _ActivityControlsState extends ConsumerState<ActivityControls> {
     super.dispose();
   }
 
-  void _startTicker(Session s) {
-    _ticker?.cancel();
-    _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
-      final now = DateTime.now();
-      var running = now.difference(s.startAt);
-      // subtract pauses duration
-      setState(() => _elapsed = running);
-    });
-  }
+  String _fmt(Duration d) {
+    final h = d.inHours;
+    final m = d.inMinutes % 60;
+    final s = d.inSeconds % 60;
+    String two(int v) => v.toString().padLeft(2, '0');
+    return "${two(h)}:${two(m)}:${two(s)}";
+    }
 
   @override
   Widget build(BuildContext context) {
     final db = ref.watch(dbProvider);
-    return FutureBuilder<Session?>(
-      future: db.getRunningSession(activityId: widget.activity.id),
-      builder: (c, snap) {
-        final running = snap.data;
-        if (running != null) _startTicker(running);
-        final h = _elapsed.inHours.toString().padLeft(2, '0');
-        final m = (_elapsed.inMinutes % 60).toString().padLeft(2, '0');
-        final s = (_elapsed.inSeconds % 60).toString().padLeft(2, '0');
-        return Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            IconButton(
-              icon: const Icon(Icons.play_arrow),
-              onPressed: () async {
-                await db.startSession(widget.activity.id!);
-                setState(() {});
-              },
-            ),
-            IconButton(
-              icon: const Icon(Icons.pause),
-              onPressed: () async {
-                await db.togglePauseByActivity(widget.activity.id!);
-                setState(() {});
-              },
-            ),
-            IconButton(
-              icon: const Icon(Icons.stop),
-              onPressed: () async {
-                await db.stopSessionByActivity(widget.activity.id!);
-                _ticker?.cancel();
-                setState(() => _elapsed = Duration.zero);
-              },
-            ),
-            const SizedBox(width: 8),
-            Text("$h:$m:$s", style: Theme.of(context).textTheme.titleMedium),
-          ],
-        );
-      },
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(_fmt(_elapsed), style: const TextStyle(fontFeatures: [])),
+        IconButton(
+          icon: const Icon(Icons.play_arrow),
+          onPressed: () async {
+            await db.startSession(widget.activityId);
+            setState(() {
+              _running = true;
+              _elapsed = const Duration(seconds: 0);
+            });
+            _startTicker();
+          },
+        ),
+        IconButton(
+          icon: const Icon(Icons.pause),
+          onPressed: _running ? () async {
+            await db.togglePauseByActivity(widget.activityId);
+            // keep ticker for simple UX; advanced: stop while paused
+          } : null,
+        ),
+        IconButton(
+          icon: const Icon(Icons.stop),
+          onPressed: _running ? () async {
+            await db.stopSessionByActivity(widget.activityId);
+            _ticker?.cancel();
+            setState(() {
+              _running = false;
+            });
+          } : null,
+        ),
+      ],
     );
   }
 }

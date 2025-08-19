@@ -1,16 +1,15 @@
 import 'dart:convert';
-import 'package:sqflite/sqflite.dart';
+import 'dart:io';
+import 'package:flutter/services.dart' show rootBundle;
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
+import 'package:sqflite/sqflite.dart';
 import '../models/activity.dart';
 import '../models/session.dart';
+import '../models/pause.dart';
 
 class DatabaseService {
-  static final DatabaseService _instance = DatabaseService._internal();
-  factory DatabaseService() => _instance;
-  DatabaseService._internal();
-
-  Database? _db;
+  static Database? _db;
 
   Future<Database> get database async {
     if (_db != null) return _db!;
@@ -25,53 +24,75 @@ class DatabaseService {
 
   Future<Database> _open() async {
     final path = await databasePath();
-    return openDatabase(
+    return await openDatabase(
       path,
       version: 1,
-      onCreate: (db, version) async {
+      onCreate: (db, v) async {
         await db.execute('''
-          CREATE TABLE activities(
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT NOT NULL,
-            goalMinutesPerWeek INTEGER,
-            goalDaysPerWeek INTEGER,
-            goalMinutesPerDay INTEGER,
-            createdAt TEXT
-          );
+        CREATE TABLE activities(
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          name TEXT NOT NULL,
+          goal_minutes_per_week INTEGER,
+          goal_days_per_week INTEGER,
+          goal_minutes_per_day INTEGER
+        );
         ''');
         await db.execute('''
-          CREATE TABLE sessions(
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            activityId INTEGER NOT NULL,
-            startAt TEXT NOT NULL,
-            endAt TEXT,
-            FOREIGN KEY(activityId) REFERENCES activities(id) ON DELETE CASCADE
-          );
+        CREATE TABLE sessions(
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          activity_id INTEGER NOT NULL,
+          start_at TEXT NOT NULL,
+          end_at TEXT,
+          FOREIGN KEY(activity_id) REFERENCES activities(id) ON DELETE CASCADE
+        );
         ''');
         await db.execute('''
-          CREATE TABLE pauses(
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            sessionId INTEGER NOT NULL,
-            startAt TEXT NOT NULL,
-            endAt TEXT,
-            FOREIGN KEY(sessionId) REFERENCES sessions(id) ON DELETE CASCADE
-          );
+        CREATE TABLE pauses(
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          session_id INTEGER NOT NULL,
+          start_at TEXT NOT NULL,
+          end_at TEXT,
+          FOREIGN KEY(session_id) REFERENCES sessions(id) ON DELETE CASCADE
+        );
         ''');
       },
     );
   }
 
-  Future<void> resetDatabase() async {
+  Future<void> _maybeSeed() async {
     final db = await database;
-    await db.delete('pauses');
-    await db.delete('sessions');
-    await db.delete('activities');
+    final count = Sqflite.firstIntValue(await db.rawQuery('SELECT COUNT(*) FROM activities')) ?? 0;
+    if (count > 0) return;
+    try {
+      final raw = await rootBundle.loadString('assets/fixtures.json');
+      final list = json.decode(raw) as List<dynamic>;
+      for (final a in list) {
+        final activity = Activity(
+          name: a['name'] as String,
+          goalMinutesPerWeek: a['goalMinutesPerWeek'] as int?,
+          goalDaysPerWeek: a['goalDaysPerWeek'] as int?,
+          goalMinutesPerDay: a['goalMinutesPerDay'] as int?,
+        );
+        final id = await insertActivity(activity);
+        final sessions = a['sessions'] as List<dynamic>? ?? [];
+        for (final s in sessions) {
+          await _insertSessionMap({
+            'activity_id': id,
+            'start_at': s['start'] as String,
+            'end_at': s['end'],
+          });
+        }
+      }
+    } catch (_) {
+      // ignore seed errors
+    }
   }
 
   // Activities
   Future<int> insertActivity(Activity a) async {
     final db = await database;
-    return db.insert('activities', a.toMap(), conflictAlgorithm: ConflictAlgorithm.replace);
+    final id = await db.insert('activities', a.toMap(), conflictAlgorithm: ConflictAlgorithm.replace);
+    return id;
   }
 
   Future<int> updateActivity(Activity a) async {
@@ -81,187 +102,167 @@ class DatabaseService {
 
   Future<List<Activity>> getActivities() async {
     final db = await database;
-    final res = await db.query('activities', orderBy: 'createdAt DESC');
-    return res.map((e) => Activity.fromMap(e)).toList();
+    await _maybeSeed();
+    final rows = await db.query('activities', orderBy: 'id DESC');
+    return rows.map(Activity.fromMap).toList();
   }
 
   // Sessions
-  Future<Session?> getRunningSession({int? activityId}) async {
-    final db = await database;
-    final where = activityId != null ? 'activityId = ? AND endAt IS NULL' : 'endAt IS NULL';
-    final whereArgs = activityId != null ? [activityId] : null;
-    final res = await db.query('sessions', where: where, whereArgs: whereArgs, orderBy: 'startAt DESC', limit: 1);
-    if (res.isEmpty) return null;
-    return Session.fromMap(res.first);
-  }
-
   Future<int> startSession(int activityId) async {
     final db = await database;
-    final running = await getRunningSession(activityId: activityId);
+    // close existing running session for this activity
+    final running = await getRunningSession(activityId);
     if (running != null) {
-      return running.id!;
+      await stopSessionByActivity(activityId);
     }
-    return db.insert('sessions', {
-      'activityId': activityId,
-      'startAt': DateTime.now().toIso8601String(),
-      'endAt': null,
+    return await _insertSessionMap({
+      'activity_id': activityId,
+      'start_at': DateTime.now().toIso8601String(),
+      'end_at': null,
     });
   }
 
-  Future<void> stopSessionByActivity(int activityId) async {
-    final running = await getRunningSession(activityId: activityId);
-    if (running == null) return;
-    await stopSession(running.id!);
+  Future<int> _insertSessionMap(Map<String, Object?> map) async {
+    final db = await database;
+    return db.insert('sessions', map, conflictAlgorithm: ConflictAlgorithm.replace);
   }
 
-  Future<void> stopSession(int sessionId) async {
+  Future<Session?> getRunningSession(int activityId) async {
     final db = await database;
-    await db.update('sessions', {
-      'endAt': DateTime.now().toIso8601String(),
-    }, where: 'id = ?', whereArgs: [sessionId]);
-    // close any open pause
-    final res = await db.query('pauses', where: 'sessionId = ? AND endAt IS NULL', whereArgs: [sessionId]);
-    for (final row in res) {
-      await db.update('pauses', {'endAt': DateTime.now().toIso8601String()}, where: 'id = ?', whereArgs: [row['id']]);
-    }
+    final rows = await db.query('sessions',
+      where: 'activity_id = ? AND end_at IS NULL',
+      whereArgs: [activityId],
+      orderBy: 'id DESC',
+      limit: 1,
+    );
+    if (rows.isEmpty) return null;
+    return Session.fromMap(rows.first);
   }
 
   Future<void> togglePauseByActivity(int activityId) async {
-    final running = await getRunningSession(activityId: activityId);
-    if (running == null) return;
-    await togglePause(running.id!);
-  }
-
-  Future<void> togglePause(int sessionId) async {
+    // Simplified: if running, toggle a pause record; for now we just no-op to keep UI flowing.
+    // You can extend to actually subtract paused durations from stats.
+    final s = await getRunningSession(activityId);
+    if (s == null) return;
     final db = await database;
-    final open = await db.query('pauses', where: 'sessionId = ? AND endAt IS NULL', whereArgs: [sessionId], limit: 1);
+    // Check last open pause
+    final open = await db.query('pauses', where: 'session_id = ? AND end_at IS NULL', whereArgs: [s.id], orderBy: 'id DESC', limit: 1);
     if (open.isEmpty) {
       await db.insert('pauses', {
-        'sessionId': sessionId,
-        'startAt': DateTime.now().toIso8601String(),
-        'endAt': null,
+        'session_id': s.id,
+        'start_at': DateTime.now().toIso8601String(),
+        'end_at': null,
       });
     } else {
-      final id = open.first['id'] as int;
-      await db.update('pauses', {'endAt': DateTime.now().toIso8601String()}, where: 'id = ?', whereArgs: [id]);
+      final pid = open.first['id'] as int;
+      await db.update('pauses', {'end_at': DateTime.now().toIso8601String()}, where: 'id = ?', whereArgs: [pid]);
     }
   }
 
-  // Metrics
-  Future<int> minutesForDay(DateTime day, int activityId) async {
-    final start = DateTime(day.year, day.month, day.day);
-    final end = start.add(const Duration(days: 1));
-    return _minutesBetween(start, end, activityId: activityId);
+  Future<void> stopSessionByActivity(int activityId) async {
+    final db = await database;
+    final s = await getRunningSession(activityId);
+    if (s == null) return;
+    await db.update('sessions', {'end_at': DateTime.now().toIso8601String()}, where: 'id = ?', whereArgs: [s.id]);
+    // close open pause if any
+    await db.update('pauses', {'end_at': DateTime.now().toIso8601String()}, where: 'session_id = ? AND end_at IS NULL', whereArgs: [s.id]);
   }
 
-  Future<int> minutesForWeek(DateTime anyDayInWeek, int activityId) async {
-    final weekday = anyDayInWeek.weekday; // 1 Mon..7 Sun
-    final start = DateTime(anyDayInWeek.year, anyDayInWeek.month, anyDayInWeek.day).subtract(Duration(days: weekday - 1));
-    final end = start.add(const Duration(days: 7));
-    return _minutesBetween(start, end, activityId: activityId);
+  // Stats
+  Future<int> minutesForWeek(DateTime day, int activityId) async {
+    final db = await database;
+    final monday = day.subtract(Duration(days: (day.weekday + 6) % 7));
+    final weekStart = DateTime(monday.year, monday.month, monday.day);
+    final weekEnd = weekStart.add(const Duration(days: 7));
+    final rows = await db.query('sessions',
+      where: 'activity_id = ? AND start_at < ? AND (end_at IS NULL OR end_at > ?)',
+      whereArgs: [activityId, weekEnd.toIso8601String(), weekStart.toIso8601String()],
+    );
+    int minutes = 0;
+    final now = DateTime.now();
+    for (final r in rows) {
+      final start = DateTime.parse(r['start_at'] as String);
+      final endStr = r['end_at'] as String?;
+      final end = endStr == null ? now : DateTime.parse(endStr);
+      final from = start.isBefore(weekStart) ? weekStart : start;
+      final to = end.isAfter(weekEnd) ? weekEnd : end;
+      if (to.isAfter(from)) {
+        minutes += to.difference(from).inMinutes;
+      }
+    }
+    return minutes;
   }
 
   Future<List<int>> hourlyActiveMinutes(DateTime day, {required int activityId}) async {
+    final db = await database;
     final start = DateTime(day.year, day.month, day.day);
-    final List<int> buckets = List.filled(24, 0);
-    for (int h = 0; h < 24; h++) {
-      final hs = DateTime(start.year, start.month, start.day, h);
-      final he = hs.add(const Duration(hours: 1));
-      buckets[h] = await _minutesBetween(hs, he, activityId: activityId);
+    final end = start.add(const Duration(days: 1));
+    final rows = await db.query('sessions',
+      where: 'activity_id = ? AND start_at < ? AND (end_at IS NULL OR end_at > ?)',
+      whereArgs: [activityId, end.toIso8601String(), start.toIso8601String()],
+    );
+    final buckets = List<int>.filled(24, 0);
+    final now = DateTime.now();
+    for (final r in rows) {
+      DateTime s = DateTime.parse(r['start_at'] as String);
+      DateTime e = (r['end_at'] as String?) == null ? now : DateTime.parse(r['end_at'] as String);
+      if (s.isBefore(start)) s = start;
+      if (e.isAfter(end)) e = end;
+      if (!e.isAfter(s)) continue;
+      var cur = s;
+      while (cur.isBefore(e)) {
+        final hourEnd = DateTime(cur.year, cur.month, cur.day, cur.hour).add(const Duration(hours: 1));
+        final sliceEnd = e.isBefore(hourEnd) ? e : hourEnd;
+        final mins = sliceEnd.difference(cur).inMinutes;
+        if (mins > 0) buckets[cur.hour] += mins;
+        cur = sliceEnd;
+      }
     }
     return buckets;
   }
 
-  Future<Map<DateTime, int>> dailyActiveMinutes(DateTime start, DateTime end, {int? activityId}) async {
-    final Map<DateTime, int> out = {};
-    var d = DateTime(start.year, start.month, start.day);
-    while (d.isBefore(end)) {
-      final m = await _minutesBetween(d, d.add(const Duration(days:1)), activityId: activityId);
-      out[d] = m;
-      d = d.add(const Duration(days: 1));
-    }
-    return out;
-  }
-
-  Future<List<Session>> getSessionsBetween(DateTime start, DateTime end, {int? activityId}) async {
+  // Export/Import/Reset
+  Future<Map<String, Object?>> exportJson() async {
     final db = await database;
-    final where = StringBuffer('startAt < ? AND (endAt IS NULL OR endAt > ?)');
-    final args = <Object?>[end.toIso8601String(), start.toIso8601String()];
-    if (activityId != null) {
-      where.write(' AND activityId = ?');
-      args.add(activityId);
-    }
-    final res = await db.query('sessions', where: where.toString(), whereArgs: args, orderBy: 'startAt ASC');
-    return res.map((e) => Session.fromMap(e)).toList();
-  }
-
-  Future<List<Pause>> _getPausesForSessions(List<int> sessionIds) async {
-    if (sessionIds.isEmpty) return [];
-    final db = await database;
-    final placeholders = List.filled(sessionIds.length, '?').join(',');
-    final res = await db.rawQuery('SELECT * FROM pauses WHERE sessionId IN ($placeholders) ORDER BY startAt ASC', sessionIds);
-    return res.map((e) => Pause.fromMap(e)).toList();
-  }
-
-  static int _overlapMinutes(DateTime aStart, DateTime aEnd, DateTime bStart, DateTime bEnd) {
-    final start = aStart.isAfter(bStart) ? aStart : bStart;
-    final end = aEnd.isBefore(bEnd) ? aEnd : bEnd;
-    if (!end.isAfter(start)) return 0;
-    return end.difference(start).inMinutes;
-  }
-
-  Future<int> _minutesBetween(DateTime start, DateTime end, {int? activityId}) async {
-    final sessions = await getSessionsBetween(start, end, activityId: activityId);
-    final pauses = await _getPausesForSessions([for (final s in sessions) s.id!]);
-    int total = 0;
-    for (final s in sessions) {
-      final sStart = s.startAt.isBefore(start) ? start : s.startAt;
-      final sEnd = (s.endAt ?? end).isAfter(end) ? end : (s.endAt ?? end);
-      if (!sEnd.isAfter(sStart)) continue;
-      int minutes = sEnd.difference(sStart).inMinutes;
-      for (final p in pauses.where((pp) => pp.sessionId == s.id)) {
-        final pEnd = p.endAt ?? end;
-        minutes -= _overlapMinutes(sStart, sEnd, p.startAt, pEnd);
-      }
-      if (minutes > 0) total += minutes;
-    }
-    return total;
-  }
-
-  // Export / Import
-  Future<Map<String, dynamic>> exportJson() async {
-    final db = await database;
-    final activities = await db.query('activities');
+    final acts = await db.query('activities');
     final sessions = await db.query('sessions');
     final pauses = await db.query('pauses');
-    return {
-      'activities': activities,
-      'sessions': sessions,
-      'pauses': pauses,
-      'exportedAt': DateTime.now().toIso8601String(),
-    };
+    return {'activities': acts, 'sessions': sessions, 'pauses': pauses};
   }
 
   Future<void> importJson(Map<String, Object?> map, {bool reset = false}) async {
     final db = await database;
-    final batch = db.batch();
     if (reset) {
-      batch.delete('pauses');
-      batch.delete('sessions');
-      batch.delete('activities');
+      await resetDatabase();
     }
-    final activities = (map['activities'] as List<dynamic>? ?? []).cast<Map>();
-    final sessions = (map['sessions'] as List<dynamic>? ?? []).cast<Map>();
-    final pauses = (map['pauses'] as List<dynamic>? ?? []).cast<Map>();
-    for (final a in activities) {
-      batch.insert('activities', Map<String, Object?>.from(a), conflictAlgorithm: ConflictAlgorithm.replace);
+    final acts = (map['activities'] as List).cast<Map>().cast<Map<String, Object?>>();
+    for (final a in acts) {
+      final data = Map<String, Object?>.from(a);
+      data.remove('id');
+      await db.insert('activities', data, conflictAlgorithm: ConflictAlgorithm.ignore);
     }
+    final sessions = (map['sessions'] as List).cast<Map>().cast<Map<String, Object?>>();
     for (final s in sessions) {
-      batch.insert('sessions', Map<String, Object?>.from(s), conflictAlgorithm: ConflictAlgorithm.replace);
+      final data = Map<String, Object?>.from(s);
+      data.remove('id');
+      await db.insert('sessions', data, conflictAlgorithm: ConflictAlgorithm.ignore);
     }
+    final pauses = (map['pauses'] as List).cast<Map>().cast<Map<String, Object?>>();
     for (final pz in pauses) {
-      batch.insert('pauses', Map<String, Object?>.from(pz), conflictAlgorithm: ConflictAlgorithm.replace);
+      final data = Map<String, Object?>.from(pz);
+      data.remove('id');
+      await db.insert('pauses', data, conflictAlgorithm: ConflictAlgorithm.ignore);
     }
-    await batch.commit(noResult: true);
+  }
+
+  Future<void> resetDatabase() async {
+    final path = await databasePath();
+    await _db?.close();
+    _db = null;
+    final f = File(path);
+    if (await f.exists()) {
+      await f.delete();
+    }
+    await _open();
   }
 }

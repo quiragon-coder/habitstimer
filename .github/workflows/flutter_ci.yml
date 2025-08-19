@@ -1,4 +1,4 @@
-﻿name: Flutter CI
+name: Flutter CI
 
 on:
   push:
@@ -26,7 +26,7 @@ jobs:
         run: flutter analyze
 
       - name: Tests
-        run: flutter test
+        run: flutter test -r expanded
 
       - name: Build debug APK
         run: flutter build apk --debug

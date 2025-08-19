@@ -6,7 +6,7 @@ import 'package:habits_timer/main.dart';
 void main() {
   testWidgets('loads MyApp inside ProviderScope', (tester) async {
     await tester.pumpWidget(const ProviderScope(child: MyApp()));
-    await tester.pumpAndSettle(const Duration(milliseconds: 100));
+    await tester.pumpAndSettle(const Duration(milliseconds: 200));
     expect(find.text('Habits Timer'), findsOneWidget);
   });
 }

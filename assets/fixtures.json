@@ -1,0 +1,57 @@
+[
+  {
+    "id": 1,
+    "name": "Reading",
+    "goalMinutesPerWeek": 300,
+    "goalDaysPerWeek": 3,
+    "goalMinutesPerDay": 60,
+    "sessions": [
+      {
+        "start": "2025-08-17T21:00:00",
+        "end": "2025-08-17T21:50:00"
+      },
+      {
+        "start": "2025-08-18T07:30:00",
+        "end": "2025-08-18T08:05:00"
+      },
+      {
+        "start": "2025-08-19T08:15:00",
+        "end": "2025-08-19T08:50:00"
+      }
+    ]
+  },
+  {
+    "id": 2,
+    "name": "Workout",
+    "goalMinutesPerWeek": 180,
+    "goalDaysPerWeek": 4,
+    "goalMinutesPerDay": 45,
+    "sessions": [
+      {
+        "start": "2025-08-16T18:00:00",
+        "end": "2025-08-16T18:40:00"
+      },
+      {
+        "start": "2025-08-18T18:10:00",
+        "end": "2025-08-18T18:55:00"
+      }
+    ]
+  },
+  {
+    "id": 3,
+    "name": "Meditation",
+    "goalMinutesPerWeek": 140,
+    "goalDaysPerWeek": 5,
+    "goalMinutesPerDay": 20,
+    "sessions": [
+      {
+        "start": "2025-08-18T22:00:00",
+        "end": "2025-08-18T22:15:00"
+      },
+      {
+        "start": "2025-08-19T06:50:00",
+        "end": "2025-08-19T07:10:00"
+      }
+    ]
+  }
+]

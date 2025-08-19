@@ -1,18 +1,18 @@
+import 'dart:convert';
+
 class Activity {
   final int? id;
   final String name;
   final int? goalMinutesPerWeek;
   final int? goalDaysPerWeek;
   final int? goalMinutesPerDay;
-  final DateTime? createdAt;
 
-  Activity({
+  const Activity({
     this.id,
     required this.name,
     this.goalMinutesPerWeek,
     this.goalDaysPerWeek,
     this.goalMinutesPerDay,
-    this.createdAt,
   });
 
   Activity copyWith({
@@ -21,33 +21,32 @@ class Activity {
     int? goalMinutesPerWeek,
     int? goalDaysPerWeek,
     int? goalMinutesPerDay,
-    DateTime? createdAt,
-  }) {
-    return Activity(
-      id: id ?? this.id,
-      name: name ?? this.name,
-      goalMinutesPerWeek: goalMinutesPerWeek ?? this.goalMinutesPerWeek,
-      goalDaysPerWeek: goalDaysPerWeek ?? this.goalDaysPerWeek,
-      goalMinutesPerDay: goalMinutesPerDay ?? this.goalMinutesPerDay,
-      createdAt: createdAt ?? this.createdAt,
-    );
-  }
+  }) => Activity(
+    id: id ?? this.id,
+    name: name ?? this.name,
+    goalMinutesPerWeek: goalMinutesPerWeek ?? this.goalMinutesPerWeek,
+    goalDaysPerWeek: goalDaysPerWeek ?? this.goalDaysPerWeek,
+    goalMinutesPerDay: goalMinutesPerDay ?? this.goalMinutesPerDay,
+  );
 
-  factory Activity.fromMap(Map<String, dynamic> map) => Activity(
-        id: map['id'] as int?,
-        name: map['name'] as String,
-        goalMinutesPerWeek: map['goalMinutesPerWeek'] as int?,
-        goalDaysPerWeek: map['goalDaysPerWeek'] as int?,
-        goalMinutesPerDay: map['goalMinutesPerDay'] as int?,
-        createdAt: map['createdAt'] != null ? DateTime.parse(map['createdAt'] as String) : null,
-      );
+  factory Activity.fromMap(Map<String, dynamic> m) => Activity(
+    id: m['id'] as int?,
+    name: m['name'] as String,
+    goalMinutesPerWeek: m['goal_minutes_per_week'] as int?,
+    goalDaysPerWeek: m['goal_days_per_week'] as int?,
+    goalMinutesPerDay: m['goal_minutes_per_day'] as int?,
+  );
 
   Map<String, dynamic> toMap() => {
-        'id': id,
-        'name': name,
-        'goalMinutesPerWeek': goalMinutesPerWeek,
-        'goalDaysPerWeek': goalDaysPerWeek,
-        'goalMinutesPerDay': goalMinutesPerDay,
-        'createdAt': (createdAt ?? DateTime.now()).toIso8601String(),
-      };
+    if (id != null) 'id': id,
+    'name': name,
+    'goal_minutes_per_week': goalMinutesPerWeek,
+    'goal_days_per_week': goalDaysPerWeek,
+    'goal_minutes_per_day': goalMinutesPerDay,
+  };
+
+  static List<Activity> listFromJson(String jsonStr) {
+    final l = json.decode(jsonStr) as List<dynamic>;
+    return l.map((e) => Activity.fromMap(e as Map<String, dynamic>)).toList();
+  }
 }
