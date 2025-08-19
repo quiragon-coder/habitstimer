@@ -1,9 +1,10 @@
-import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../providers.dart';
-import '../models/activity.dart';
-import '../services/database_service.dart';
-import 'activity_detail_page.dart';
+﻿import ''package:flutter/material.dart'';
+import ''package:flutter_riverpod/flutter_riverpod.dart'';
+import ''../providers.dart'';
+import ''../models/activity.dart'';
+import ''../services/database_service.dart'';
+import ''../widgets/activity_controls.dart'';
+import ''activity_detail_page.dart'';
 
 class ActivitiesListPage extends ConsumerStatefulWidget {
   const ActivitiesListPage({super.key});
@@ -13,7 +14,6 @@ class ActivitiesListPage extends ConsumerStatefulWidget {
 }
 
 class _ActivitiesListPageState extends ConsumerState<ActivitiesListPage> {
-  final nameCtrl = TextEditingController();
   final db = DatabaseService();
 
   @override
@@ -22,16 +22,16 @@ class _ActivitiesListPageState extends ConsumerState<ActivitiesListPage> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Habits Timer'),
+        title: const Text(''Habits Timer''),
         actions: [
-          IconButton(onPressed: ()=> Navigator.pushNamed(context, '/heatmap'), icon: const Icon(Icons.grid_on)),
-          IconButton(onPressed: ()=> Navigator.pushNamed(context, '/settings'), icon: const Icon(Icons.settings)),
+          IconButton(onPressed: ()=> Navigator.pushNamed(context, ''/heatmap''), icon: const Icon(Icons.grid_on)),
+          IconButton(onPressed: ()=> Navigator.pushNamed(context, ''/settings''), icon: const Icon(Icons.settings)),
         ],
       ),
       body: activitiesAsync.when(
         data: (items){
           if (items.isEmpty) {
-            return const Center(child: Text('Ajoute une activité avec le +'));
+            return const Center(child: Text(''Ajoute une activitÃ© avec le +''));
           }
           return ListView.separated(
             padding: const EdgeInsets.all(12),
@@ -43,32 +43,28 @@ class _ActivitiesListPageState extends ConsumerState<ActivitiesListPage> {
                 child: ListTile(
                   title: Text(a.name),
                   subtitle: FutureBuilder<int>(
-                    future: db.minutesForWeek(DateTime.now(), a.id),
-                    builder: (c, s) => Text('Semaine: ${s.data ?? 0} min' + (a.goalMinutesPerWeek!=null ? ' / ${a.goalMinutesPerWeek} min' : '')),
+                    future: db.minutesForWeek(DateTime.now(), a.id!),
+                    builder: (c, s) => Text(''Semaine: ${s.data ?? 0} min'' + (a.goalMinutesPerWeek!=null ? '' / ${a.goalMinutesPerWeek} min'' : '''')),
                   ),
                   onTap: ()=> Navigator.push(context, MaterialPageRoute(builder: (_)=> ActivityDetailPage(activity: a))),
-                  trailing: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      IconButton(icon: const Icon(Icons.play_arrow), onPressed: () async { await db.startSession(a.id!); setState((){}); }),
-                      IconButton(icon: const Icon(Icons.pause), onPressed: () async { await db.togglePause(null, a.id!); setState((){}); }),
-                      IconButton(icon: const Icon(Icons.stop), onPressed: () async { await db.stopSession(null, a.id!); setState((){}); }),
-                    ],
-                  ),
+                  trailing: ActivityControls(activity: a),
                 ),
               );
             },
           );
         },
         loading: ()=> const Center(child: CircularProgressIndicator()),
-        error: (e, st)=> Center(child: Text('Erreur: $e'))
+        error: (e, st)=> Center(child: Text(''Erreur: $e''))
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: () async {
           final a = await _askNewActivity(context);
           if (a == null) return;
-          await db.insertActivity(a);
-          ref.refresh(activitiesProvider);
+          final id = await db.insertActivity(a);
+          // Si vous avez copyWith, vous pouvez faire: final created = a.copyWith(id: id);
+          // Puis Ã©ventuellement naviguer vers la page dÃ©tail.
+          // Ici on se contente de rafraÃ®chir la liste :
+          ref.invalidate(activitiesProvider);
         },
         child: const Icon(Icons.add),
       ),
@@ -85,22 +81,22 @@ class _ActivitiesListPageState extends ConsumerState<ActivitiesListPage> {
         double daysPerWeek = 3;
         return StatefulBuilder(
           builder: (c, setState) => AlertDialog(
-            title: const Text('Nouvelle activité'),
+            title: const Text(''Nouvelle activitÃ©''),
             content: SingleChildScrollView(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  TextField(controller: ctrl, decoration: const InputDecoration(labelText: 'Nom')),
+                  TextField(controller: ctrl, decoration: const InputDecoration(labelText: ''Nom'')),
                   const SizedBox(height: 12),
-                  Row(children: [const Text('Objectif h/sem'), Expanded(child: Slider(min:0, max:1200, divisions:120, value: weekMin, label: '${(weekMin/60).toStringAsFixed(1)}h', onChanged: (v)=> setState(()=> weekMin=v)))]),
-                  Row(children: [const Text('Jours/sem'), Expanded(child: Slider(min:0, max:7, divisions:7, value: daysPerWeek, label: daysPerWeek.toStringAsFixed(0), onChanged: (v)=> setState(()=> daysPerWeek=v)))]),
-                  Row(children: [const Text('Objectif h/jour'), Expanded(child: Slider(min:0, max:600, divisions:120, value: dayMin, label: '${(dayMin/60).toStringAsFixed(1)}h', onChanged: (v)=> setState(()=> dayMin=v)))]),
+                  Row(children: [const Text(''Objectif h/sem''), Expanded(child: Slider(min:0, max:1200, divisions:120, value: weekMin, label: ''${(weekMin/60).toStringAsFixed(1)}h'', onChanged: (v)=> setState(()=> weekMin=v)))]),
+                  Row(children: [const Text(''Jours/sem''), Expanded(child: Slider(min:0, max:7, divisions:7, value: daysPerWeek, label: daysPerWeek.toStringAsFixed(0), onChanged: (v)=> setState(()=> daysPerWeek=v)))]),
+                  Row(children: [const Text(''Objectif h/jour''), Expanded(child: Slider(min:0, max:600, divisions:120, value: dayMin, label: ''${(dayMin/60).toStringAsFixed(1)}h'', onChanged: (v)=> setState(()=> dayMin=v)))]),
                 ],
               ),
             ),
             actions: [
-              TextButton(onPressed: ()=> Navigator.pop(c), child: const Text('Annuler')),
-              FilledButton(onPressed: ()=> Navigator.pop(c, ctrl.text.trim().isEmpty ? null : ctrl.text.trim()), child: const Text('Créer')),
+              TextButton(onPressed: ()=> Navigator.pop(c), child: const Text(''Annuler'')),
+              FilledButton(onPressed: ()=> Navigator.pop(c, ctrl.text.trim().isEmpty ? null : ctrl.text.trim()), child: const Text(''CrÃ©er'')),
             ],
           ),
         );
@@ -109,9 +105,10 @@ class _ActivitiesListPageState extends ConsumerState<ActivitiesListPage> {
     if (name==null) return null;
     return Activity(
       name: name,
-      goalMinutesPerWeek: 300,
-      goalDaysPerWeek: 3,
-      goalMinutesPerDay: 60,
+      goalMinutesPerWeek: weekMin.round(),
+      goalDaysPerWeek: daysPerWeek.round(),
+      goalMinutesPerDay: dayMin.round(),
     );
   }
 }
+
