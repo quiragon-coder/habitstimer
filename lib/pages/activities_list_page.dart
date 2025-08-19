@@ -1,55 +1,96 @@
 import 'package:flutter/material.dart';
 import '../services/database_service.dart';
 import '../models/activity.dart';
+import 'create_activity_page.dart';
+import 'activity_detail_page.dart';
 
 class ActivitiesListPage extends StatefulWidget {
-  const ActivitiesListPage({super.key});
-
   @override
-  State<ActivitiesListPage> createState() => _ActivitiesListPageState();
+  _ActivitiesListPageState createState() => _ActivitiesListPageState();
 }
 
 class _ActivitiesListPageState extends State<ActivitiesListPage> {
-  final DatabaseService _db = DatabaseService();
-
-  Future<void> _addActivity() async {
-    final newActivity = Activity(
-      id: DateTime.now().millisecondsSinceEpoch,
-      name: "Nouvelle activité",
-    );
-    await _db.addActivity(newActivity);
-    setState(() {}); // refresh
-  }
+  final _db = DatabaseService();
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text("Mes activités")),
+      appBar: AppBar(title: Text("Mes activités")),
       body: FutureBuilder<List<Activity>>(
-        future: _db.getAllActivities(),
+        future: _db.getActivities(),
         builder: (context, snapshot) {
-          if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
+          if (!snapshot.hasData) {
+            return Center(child: CircularProgressIndicator());
+          }
 
           final activities = snapshot.data!;
           if (activities.isEmpty) {
-            return const Center(child: Text("Ajoute une activité avec le +"));
+            return Center(child: Text("Ajoute une activité avec le +"));
           }
 
           return ListView.builder(
             itemCount: activities.length,
             itemBuilder: (context, index) {
               final activity = activities[index];
-              return ListTile(
-                title: Text(activity.name),
+              return Card(
+                color: Color(activity.color),
+                child: ListTile(
+                  leading: Text(
+                    activity.emoji,
+                    style: TextStyle(fontSize: 28),
+                  ),
+                  title: Text(
+                    activity.name,
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  subtitle: Text(
+                    _buildGoalsText(activity),
+                    style: TextStyle(color: Colors.white70),
+                  ),
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => ActivityDetailPage(activity: activity),
+                      ),
+                    );
+                  },
+                ),
               );
             },
           );
         },
       ),
       floatingActionButton: FloatingActionButton(
-        onPressed: _addActivity,
-        child: const Icon(Icons.add),
+        onPressed: () async {
+          final result = await Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => CreateActivityPage()),
+          );
+          if (result == true) setState(() {});
+        },
+        child: Icon(Icons.add),
       ),
     );
+  }
+
+  String _buildGoalsText(Activity activity) {
+    final goals = <String>[];
+    if (activity.goalMinutesPerDay != null) {
+      goals.add("${activity.goalMinutesPerDay} min/jour");
+    }
+    if (activity.goalMinutesPerWeek != null) {
+      goals.add("${activity.goalMinutesPerWeek} min/semaine");
+    }
+    if (activity.goalMinutesPerMonth != null) {
+      goals.add("${activity.goalMinutesPerMonth} min/mois");
+    }
+    if (activity.goalMinutesPerYear != null) {
+      goals.add("${activity.goalMinutesPerYear} min/an");
+    }
+    return goals.isEmpty ? "Aucun objectif" : goals.join(" • ");
   }
 }
