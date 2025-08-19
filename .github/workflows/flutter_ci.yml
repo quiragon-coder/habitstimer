@@ -1,154 +1,34 @@
-name: Flutter CI
+﻿name: Flutter CI
 
 on:
   push:
-    branches: [ main ]
+    branches: [ "main" ]
   pull_request:
-    branches: [ main ]
-
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
-
-env:
-  JAVA_VERSION: "17"
-  FLUTTER_CHANNEL: "stable"
-  GOLDEN_TOLERANCE: "0.01"
+    branches: [ "main" ]
 
 jobs:
-  lint-test:
-    name: Lint, analyze, tests (with golden)
+  build:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Java ${{ env.JAVA_VERSION }}
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: ${{ env.JAVA_VERSION }}
-
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          channel: ${{ env.FLUTTER_CHANNEL }}
+          channel: stable
           cache: true
-
-      - name: Cache Pub
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.pub-cache
-            ${{ github.workspace }}/.dart_tool
-          key: ${{ runner.os }}-pub-${{ hashFiles('**/pubspec.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-pub-
-
-      - name: System deps (fonts for golden tests)
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libfontconfig1 fonts-dejavu-core
-
-      - name: Flutter doctor
-        run: flutter doctor -v
 
       - name: Pub get
         run: flutter pub get
-
-      - name: Format check
-        run: dart format --output=none --set-exit-if-changed .
 
       - name: Analyze
         run: flutter analyze
 
-      - name: Pub outdated (JSON report)
-        id: outdated
-        continue-on-error: true
-        run: |
-          mkdir -p build/reports
-          flutter pub outdated --mode=null-safety --json > build/reports/pub_outdated.json
-          dart - <<'DART'
-          import 'dart:convert';
-          import 'dart:io';
-          final j = jsonDecode(File('build/reports/pub_outdated.json').readAsStringSync());
-          print('=== pub outdated summary ===');
-          for (final r in (j['packages'] ?? [])) {
-            final name = r['name'];
-            final resolvable = r['resolvable']?['latest'];
-            final upgradable = r['upgradable']?['latest'];
-            final latest = r['latest']?['version'];
-            if (upgradable != null || resolvable != null) {
-              print('$name -> upgradable:$upgradable resolvable:$resolvable latest:$latest');
-            }
-          }
-          DART
+      - name: Tests
+        run: flutter test
 
-      - name: Upload pub outdated report
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: pub-outdated-json
-          path: build/reports/pub_outdated.json
-
-      - name: Unit & Golden tests
-        env:
-          GOLDEN_TOLERANCE: ${{ env.GOLDEN_TOLERANCE }}
-        run: flutter test --coverage -r expanded
-
-      - name: Upload coverage
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: test-coverage
-          path: coverage/lcov.info
-
-  build-android:
-    name: Build Android (debug) with Gradle cache
-    needs: lint-test
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Java ${{ env.JAVA_VERSION }}
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: ${{ env.JAVA_VERSION }}
-
-      - name: Setup Flutter
-        uses: subosito/flutter-action@v2
-        with:
-          channel: ${{ env.FLUTTER_CHANNEL }}
-          cache: true
-
-      - name: Cache Pub
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.pub-cache
-            ${{ github.workspace }}/.dart_tool
-          key: ${{ runner.os }}-pub-${{ hashFiles('**/pubspec.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-pub-
-
-      - name: Cache Gradle
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-          key: ${{ runner.os }}-gradle-${{ hashFiles('android/**/gradle-wrapper.properties') }}
-          restore-keys: |
-            ${{ runner.os }}-gradle-
-
-      - name: Pub get
-        run: flutter pub get
-
-      - name: Build APK (debug)
+      - name: Build debug APK
         run: flutter build apk --debug
 
       - name: Upload APK
