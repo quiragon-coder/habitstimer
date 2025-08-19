@@ -1,0 +1,4 @@
+tags:
+  golden:
+    description: Golden tests for UI snapshots
+    enabled: true
