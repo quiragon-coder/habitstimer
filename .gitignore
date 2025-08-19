@@ -1,0 +1,24 @@
+﻿# Flutter/Dart
+.dart_tool/
+.packages
+build/
+coverage/
+pubspec.lock
+
+# Android
+android/.gradle/
+android/local.properties
+
+# iOS/macOS
+ios/Pods/
+macos/Pods/
+**/DerivedData/
+
+# IDE
+.vscode/
+.idea/
+*.iml
+
+# DB / exports
+**/*.db
+**/export_*.json
