@@ -1,19 +1,17 @@
-# Flutter/Dart
+﻿# --- Flutter / Dart ---
 .dart_tool/
 .packages
-.pub-cache/
 build/
 coverage/
-.flutter-plugins
-.flutter-plugins-dependencies
+pubspec.lock
 
-# Android/Gradle
+# --- Android / Gradle ---
 android/.gradle/
 android/local.properties
 **/*.keystore
 **/key.properties
 
-# iOS/Xcode
+# --- iOS / macOS ---
 ios/Pods/
 macos/Pods/
 **/DerivedData/
@@ -22,11 +20,15 @@ macos/Pods/
 **/*.xcodeproj/xcuserdata/
 **/*.xcuserdatad/
 
-# IDE
+# --- Linux / Windows / Web ephemerals ---
+linux/flutter/ephemeral/
+windows/flutter/ephemeral/
+web/.dart_tool/
+
+# --- IDE ---
 .idea/
 .vscode/
 *.iml
 
-# App data
-**/*.db
-**/export_*.json
+# --- Autres ---
+*.log
