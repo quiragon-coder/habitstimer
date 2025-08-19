@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import '../services/database_service.dart';
-import 'activity_detail_page.dart';
+import '../models/activity.dart';
 
 class ActivitiesListPage extends StatefulWidget {
   const ActivitiesListPage({super.key});
@@ -10,51 +10,44 @@ class ActivitiesListPage extends StatefulWidget {
 }
 
 class _ActivitiesListPageState extends State<ActivitiesListPage> {
-  final _db = DatabaseService();
+  final DatabaseService _db = DatabaseService();
 
-  Future<void> _createActivity() async {
-    await _db.createActivity ("Nouvelle activité");
-    setState(() {});
+  Future<void> _addActivity() async {
+    final newActivity = Activity(
+      id: DateTime.now().millisecondsSinceEpoch,
+      name: "Nouvelle activité",
+    );
+    await _db.addActivity(newActivity);
+    setState(() {}); // refresh
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text("Mes activités"),
-      ),
-      body: FutureBuilder(
-        future: _db.getActivities(),
+      appBar: AppBar(title: const Text("Mes activités")),
+      body: FutureBuilder<List<Activity>>(
+        future: _db.getAllActivities(),
         builder: (context, snapshot) {
-          if (snapshot.connectionState != ConnectionState.done) {
-            return const Center(child: CircularProgressIndicator());
+          if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
+
+          final activities = snapshot.data!;
+          if (activities.isEmpty) {
+            return const Center(child: Text("Ajoute une activité avec le +"));
           }
-          if (!snapshot.hasData || snapshot.data!.isEmpty) {
-            return const Center(
-              child: Text("Ajoute une activité avec le +"),
-            );
-          }
-          final acts = snapshot.data!;
+
           return ListView.builder(
-            itemCount: acts.length,
-            itemBuilder: (context, i) {
-              final activity = acts[i];
+            itemCount: activities.length,
+            itemBuilder: (context, index) {
+              final activity = activities[index];
               return ListTile(
                 title: Text(activity.name),
-                onTap: () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => ActivityDetailPage(activity: activity),
-                    ),
-                  );
-                },
               );
             },
           );
         },
       ),
       floatingActionButton: FloatingActionButton(
-        onPressed: _createActivity,
+        onPressed: _addActivity,
         child: const Icon(Icons.add),
       ),
     );
