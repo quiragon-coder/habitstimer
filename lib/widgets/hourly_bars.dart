@@ -2,27 +2,33 @@ import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 
 class HourlyBars extends StatelessWidget {
-  final List<int> data;
+  final List<int> data; // 24 buckets
   const HourlyBars({super.key, required this.data});
 
   @override
   Widget build(BuildContext context) {
     return SizedBox(
       height: 180,
-      child: LineChart(
-        LineChartData(
+      child: BarChart(
+        BarChartData(
+          gridData: const FlGridData(show: false),
+          borderData: FlBorderData(show: false),
           titlesData: FlTitlesData(
-            leftTitles: AxisTitles(sideTitles: SideTitles(showTitles: true, interval: 30)),
-            bottomTitles: AxisTitles(sideTitles: SideTitles(showTitles: true, interval: 7)),
+            bottomTitles: AxisTitles(sideTitles: SideTitles(showTitles: true, getTitlesWidget: (v, meta){
+              final i = v.toInt();
+              if (i % 3 != 0) return const SizedBox.shrink();
+              return Text("$i");
+            }, interval: 1)),
+            leftTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
             rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
             topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
           ),
-          lineBarsData: [
-            LineChartBarData(
-              isCurved: true,
-              barWidth: 3,
-              spots: List.generate(data.length, (i) => FlSpot(i.toDouble(), data[i].toDouble())),
-            )
+          barGroups: [
+            for (int i=0; i<24; i++)
+              BarChartGroupData(
+                x: i,
+                barRods: [BarChartRodData(toY: (i < data.length ? data[i] : 0).toDouble())],
+              )
           ],
         ),
       ),

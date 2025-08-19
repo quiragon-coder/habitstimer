@@ -1,10 +1,10 @@
 class Activity {
   final int? id;
   final String name;
-  // goals (minutes)
   final int? goalMinutesPerWeek;
   final int? goalDaysPerWeek;
   final int? goalMinutesPerDay;
+  final DateTime? createdAt;
 
   Activity({
     this.id,
@@ -12,6 +12,7 @@ class Activity {
     this.goalMinutesPerWeek,
     this.goalDaysPerWeek,
     this.goalMinutesPerDay,
+    this.createdAt,
   });
 
   Activity copyWith({
@@ -20,27 +21,33 @@ class Activity {
     int? goalMinutesPerWeek,
     int? goalDaysPerWeek,
     int? goalMinutesPerDay,
-  }) => Activity(
-    id: id ?? this.id,
-    name: name ?? this.name,
-    goalMinutesPerWeek: goalMinutesPerWeek ?? this.goalMinutesPerWeek,
-    goalDaysPerWeek: goalDaysPerWeek ?? this.goalDaysPerWeek,
-    goalMinutesPerDay: goalMinutesPerDay ?? this.goalMinutesPerDay,
-  );
+    DateTime? createdAt,
+  }) {
+    return Activity(
+      id: id ?? this.id,
+      name: name ?? this.name,
+      goalMinutesPerWeek: goalMinutesPerWeek ?? this.goalMinutesPerWeek,
+      goalDaysPerWeek: goalDaysPerWeek ?? this.goalDaysPerWeek,
+      goalMinutesPerDay: goalMinutesPerDay ?? this.goalMinutesPerDay,
+      createdAt: createdAt ?? this.createdAt,
+    );
+  }
+
+  factory Activity.fromMap(Map<String, dynamic> map) => Activity(
+        id: map['id'] as int?,
+        name: map['name'] as String,
+        goalMinutesPerWeek: map['goalMinutesPerWeek'] as int?,
+        goalDaysPerWeek: map['goalDaysPerWeek'] as int?,
+        goalMinutesPerDay: map['goalMinutesPerDay'] as int?,
+        createdAt: map['createdAt'] != null ? DateTime.parse(map['createdAt'] as String) : null,
+      );
 
   Map<String, dynamic> toMap() => {
-    'id': id,
-    'name': name,
-    'goalMinutesPerWeek': goalMinutesPerWeek,
-    'goalDaysPerWeek': goalDaysPerWeek,
-    'goalMinutesPerDay': goalMinutesPerDay,
-  };
-
-  static Activity fromMap(Map<String, dynamic> m) => Activity(
-    id: m['id'] as int?,
-    name: m['name'] as String,
-    goalMinutesPerWeek: m['goalMinutesPerWeek'] as int?,
-    goalDaysPerWeek: m['goalDaysPerWeek'] as int?,
-    goalMinutesPerDay: m['goalMinutesPerDay'] as int?,
-  );
+        'id': id,
+        'name': name,
+        'goalMinutesPerWeek': goalMinutesPerWeek,
+        'goalDaysPerWeek': goalDaysPerWeek,
+        'goalMinutesPerDay': goalMinutesPerDay,
+        'createdAt': (createdAt ?? DateTime.now()).toIso8601String(),
+      };
 }

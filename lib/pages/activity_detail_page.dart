@@ -1,133 +1,78 @@
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/activity.dart';
-import '../models/session.dart';
+import '../providers.dart';
 import '../services/database_service.dart';
+import '../widgets/activity_controls.dart';
+import '../widgets/hourly_bars.dart';
 import '../widgets/daily_bars.dart';
 
-class ActivityDetailPage extends StatefulWidget {
+class ActivityDetailPage extends ConsumerWidget {
   final Activity activity;
   const ActivityDetailPage({super.key, required this.activity});
 
   @override
-  State<ActivityDetailPage> createState() => _ActivityDetailPageState();
-}
-
-class _ActivityDetailPageState extends State<ActivityDetailPage> {
-  final db = DatabaseService();
-  late DateTime selectedDay;
-  Session? running;
-
-  @override
-  void initState() {
-    super.initState();
-    selectedDay = DateTime.now();
-    _load();
-  }
-
-  Future<void> _load() async {
-    running = await db.getRunningSession(widget.activity.id);
-    setState((){});
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final a = widget.activity;
+  Widget build(BuildContext context, WidgetRef ref) {
+    final db = ref.watch(dbProvider);
+    final today = DateTime.now();
     return Scaffold(
-      appBar: AppBar(title: Text(a.name)),
+      appBar: AppBar(title: Text(activity.name)),
       body: ListView(
-        padding: const EdgeInsets.all(12),
+        padding: const EdgeInsets.all(16),
         children: [
-          Row(
-            children: [
-              Expanded(child: FutureBuilder<int>(
-                future: db.minutesForWeek(DateTime.now(), a.id),
-                builder: (c, s) => Card(child: ListTile(title: const Text('Semaine'), subtitle: Text('${s.data ?? 0} min'))),
-              )),
-              const SizedBox(width: 8),
-              Expanded(child: FutureBuilder<int>(
-                future: db.minutesForDay(DateTime.now(), a.id),
-                builder: (c, s) => Card(child: ListTile(title: const Text('Aujourd’hui'), subtitle: Text('${s.data ?? 0} min'))),
-              )),
-            ],
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(12.0),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text('Contrôles'),
+                  ActivityControls(activity: activity),
+                ],
+              ),
+            ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 12),
           Card(
             child: Padding(
               padding: const EdgeInsets.all(12.0),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Par heure (${DateFormat('yMMMd').format(selectedDay)})', style: Theme.of(context).textTheme.titleMedium),
-                  const SizedBox(height: 8),
+                  const Text('Aujourd'hui (minutes/heure)'),
                   FutureBuilder<List<int>>(
-                    future: db.hourlyActiveMinutes(selectedDay, activityId: a.id),
-                    builder: (c, s) => s.hasData ? DailyBars(hourlyMinutes: s.data!) : const SizedBox(height: 200, child: Center(child: CircularProgressIndicator())),
-                  ),
-                  const SizedBox(height: 8),
-                  Row(
-                    children: [
-                      IconButton(onPressed: (){ setState(()=> selectedDay = selectedDay.subtract(const Duration(days: 1))); }, icon: const Icon(Icons.chevron_left)),
-                      Text(DateFormat('EEEE d MMM').format(selectedDay)),
-                      IconButton(onPressed: (){ setState(()=> selectedDay = selectedDay.add(const Duration(days: 1))); }, icon: const Icon(Icons.chevron_right)),
-                    ],
+                    future: db.hourlyActiveMinutes(today, activityId: activity.id!),
+                    builder: (_, snap) => snap.hasData
+                      ? HourlyBars(data: snap.data!)
+                      : const SizedBox(height: 180, child: Center(child: CircularProgressIndicator())),
                   ),
                 ],
               ),
             ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 12),
           Card(
             child: Padding(
               padding: const EdgeInsets.all(12.0),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Historique (7 jours)', style: Theme.of(context).textTheme.titleMedium),
-                  const SizedBox(height: 8),
-                  FutureBuilder<List<Session>>(
-                    future: db.getSessionsBetween(DateTime.now().subtract(const Duration(days: 7)), DateTime.now(), activityId: a.id),
-                    builder: (c, s) {
-                      if (!s.hasData) return const Center(child: CircularProgressIndicator());
-                      final items = s.data!;
-                      if (items.isEmpty) return const Text('Aucune session.');
-                      return Column(
-                        children: items.map((e){
-                          final dur = e.endAt==null ? const Duration() : e.endAt!.difference(e.startAt);
-                          return ListTile(
-                            leading: const Icon(Icons.timer),
-                            title: Text('${DateFormat.Hm().format(e.startAt)} → ${e.endAt==null ? '...' : DateFormat.Hm().format(e.endAt!)}'),
-                            subtitle: Text('${dur.inMinutes} min'),
-                          );
-                        }).toList(),
-                      );
-                    },
+                  const Text('7 derniers jours (minutes/jour)'),
+                  FutureBuilder<Map<DateTime,int>>(
+                    future: () async {
+                      final end = DateTime(today.year, today.month, today.day).add(const Duration(days: 1));
+                      final start = end.subtract(const Duration(days: 7));
+                      return db.dailyActiveMinutes(start, end, activityId: activity.id);
+                    }(),
+                    builder: (_, snap) => snap.hasData
+                      ? DailyBars(data: snap.data!)
+                      : const SizedBox(height: 180, child: Center(child: CircularProgressIndicator())),
                   ),
                 ],
               ),
             ),
           ),
-          const SizedBox(height: 80),
         ],
-      ),
-      bottomNavigationBar: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(12.0),
-          child: Row(
-            children: [
-              Expanded(child: FilledButton(onPressed: () async { await db.togglePause(running?.id, a.id); await _load(); }, child: const Text('Pause / Reprendre'))),
-              const SizedBox(width: 8),
-              Expanded(child: OutlinedButton(onPressed: () async { await db.stopSession(running?.id, a.id); await _load(); }, child: const Text('Arrêter'))),
-            ],
-          ),
-        ),
-      ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () async {
-          await db.startSession(a.id!);
-          await _load();
-        },
-        child: const Icon(Icons.play_arrow),
       ),
     );
   }

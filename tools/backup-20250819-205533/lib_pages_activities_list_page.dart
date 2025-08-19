@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers.dart';
 import '../models/activity.dart';
 import '../services/database_service.dart';
-import '../widgets/activity_controls.dart';
+import 'activity_detail_page.dart';
 
 class ActivitiesListPage extends ConsumerStatefulWidget {
   const ActivitiesListPage({super.key});
@@ -13,6 +13,7 @@ class ActivitiesListPage extends ConsumerStatefulWidget {
 }
 
 class _ActivitiesListPageState extends ConsumerState<ActivitiesListPage> {
+  final nameCtrl = TextEditingController();
   final db = DatabaseService();
 
   @override
@@ -42,11 +43,18 @@ class _ActivitiesListPageState extends ConsumerState<ActivitiesListPage> {
                 child: ListTile(
                   title: Text(a.name),
                   subtitle: FutureBuilder<int>(
-                    future: db.minutesForWeek(DateTime.now(), a.id!),
+                    future: db.minutesForWeek(DateTime.now(), a.id),
                     builder: (c, s) => Text('Semaine: ${s.data ?? 0} min' + (a.goalMinutesPerWeek!=null ? ' / ${a.goalMinutesPerWeek} min' : '')),
                   ),
-                  onTap: ()=> Navigator.pushNamed(context, '/activity', arguments: a),
-                  trailing: ActivityControls(activity: a),
+                  onTap: ()=> Navigator.push(context, MaterialPageRoute(builder: (_)=> ActivityDetailPage(activity: a))),
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      IconButton(icon: const Icon(Icons.play_arrow), onPressed: () async { await db.startSession(a.id!); setState((){}); }),
+                      IconButton(icon: const Icon(Icons.pause), onPressed: () async { await db.togglePause(null, a.id!); setState((){}); }),
+                      IconButton(icon: const Icon(Icons.stop), onPressed: () async { await db.stopSession(null, a.id!); setState((){}); }),
+                    ],
+                  ),
                 ),
               );
             },
@@ -60,7 +68,7 @@ class _ActivitiesListPageState extends ConsumerState<ActivitiesListPage> {
           final a = await _askNewActivity(context);
           if (a == null) return;
           await db.insertActivity(a);
-          ref.invalidate(activitiesProvider);
+          ref.refresh(activitiesProvider);
         },
         child: const Icon(Icons.add),
       ),
@@ -68,7 +76,7 @@ class _ActivitiesListPageState extends ConsumerState<ActivitiesListPage> {
   }
 
   Future<Activity?> _askNewActivity(BuildContext context) async {
-    return showDialog<Activity>(
+    final name = await showDialog<String>(
       context: context,
       builder: (c){
         final ctrl = TextEditingController();
@@ -92,16 +100,18 @@ class _ActivitiesListPageState extends ConsumerState<ActivitiesListPage> {
             ),
             actions: [
               TextButton(onPressed: ()=> Navigator.pop(c), child: const Text('Annuler')),
-              FilledButton(onPressed: ()=> Navigator.pop(c, ctrl.text.trim().isEmpty ? null : Activity(
-                name: ctrl.text.trim(),
-                goalMinutesPerWeek: weekMin.toInt(),
-                goalDaysPerWeek: daysPerWeek.toInt(),
-                goalMinutesPerDay: dayMin.toInt(),
-              )), child: const Text('Créer')),
+              FilledButton(onPressed: ()=> Navigator.pop(c, ctrl.text.trim().isEmpty ? null : ctrl.text.trim()), child: const Text('Créer')),
             ],
           ),
         );
       }
+    );
+    if (name==null) return null;
+    return Activity(
+      name: name,
+      goalMinutesPerWeek: 300,
+      goalDaysPerWeek: 3,
+      goalMinutesPerDay: 60,
     );
   }
 }

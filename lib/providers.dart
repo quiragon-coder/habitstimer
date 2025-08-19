@@ -1,16 +1,16 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'services/database_service.dart';
 import 'models/activity.dart';
 import 'models/session.dart';
+import 'services/database_service.dart';
 
 final dbProvider = Provider<DatabaseService>((ref) => DatabaseService());
 
 final activitiesProvider = FutureProvider<List<Activity>>((ref) async {
-  final db = ref.read(dbProvider);
+  final db = ref.watch(dbProvider);
   return db.getActivities();
 });
 
-final runningSessionProvider = FutureProvider.family<Session?, int?>((ref, activityId) async {
-  final db = ref.read(dbProvider);
-  return db.getRunningSession(activityId);
+final runningSessionProvider = FutureProvider.family<Session?, int>((ref, activityId) async {
+  final db = ref.watch(dbProvider);
+  return db.getRunningSession(activityId: activityId);
 });
