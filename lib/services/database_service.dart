@@ -1,34 +1,35 @@
-import 'dart:async';
-
+import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:habits_timer/models/activity.dart';
 import 'package:habits_timer/models/session.dart';
 import 'package:habits_timer/models/pause.dart';
 
-/// Service de données en mémoire.
-/// Impl simple pour débloquer l’app (création + listing + sessions).
-/// Tu pourras plus tard brancher SQLite en gardant les mêmes signatures.
+/// Service en mémoire (pas encore SQLite).
+/// Objectif: faire tourner l'app (création, ouverture, start/stop, mini stats).
+/// On migrera vers SQLite dans le palier 3.
 class DatabaseService {
-  // --- Singleton simple (facultatif mais pratique) ---
+  // Singleton simple
   static final DatabaseService _instance = DatabaseService._internal();
   factory DatabaseService() => _instance;
   DatabaseService._internal();
 
-  // --- Stores en mémoire ---
-  final List<Activity> _activities = <Activity>[];
-  final List<Session> _sessions = <Session>[];
-  final List<Pause> _pauses = <Pause>[];
+  // --- STOCKAGE EN MÉMOIRE ---
+  final List<Activity> _activities = [];
+  final List<Session> _sessions = [];
+  final List<Pause> _pauses = [];
 
   int _nextActivityId = 1;
   int _nextSessionId = 1;
   int _nextPauseId = 1;
 
-  // ----------------------------------------------------
-  // ACTIVITIES
-  // ----------------------------------------------------
+  // ---------- ACTIVITIES ----------
+  Future<List<Activity>> getAllActivities() async {
+    // renvoie une copie pour éviter les mutations externes
+    return List<Activity>.unmodifiable(_activities);
+  }
 
-  /// Ajoute une activité. Assigne un id auto-incrémenté.
-  Future<void> addActivity(Activity a) async {
-    final toAdd = Activity(
+  Future<Activity> addActivity(Activity a) async {
+    final withId = Activity(
       id: _nextActivityId++,
       name: a.name,
       emoji: a.emoji,
@@ -38,29 +39,51 @@ class DatabaseService {
       goalMinutesPerMonth: a.goalMinutesPerMonth,
       goalMinutesPerYear: a.goalMinutesPerYear,
     );
-    _activities.add(toAdd);
+    _activities.add(withId);
+    return withId;
   }
 
-  /// Retourne toutes les activités.
-  Future<List<Activity>> getAllActivities() async {
-    // On renvoie une copie immuable pour éviter les modifs externes.
-    return List<Activity>.unmodifiable(_activities);
-  }
-
-  // ----------------------------------------------------
-  // SESSIONS (play/pause/stop)
-  // ----------------------------------------------------
-
-  /// Démarre une session pour une activité (et stoppe l’ancienne si besoin).
-  Future<Session> startSession(int activityId) async {
-    // S’il existe déjà une session en cours pour cette activité, on la stoppe.
-    final existing = _sessions.firstWhere(
-          (s) => s.activityId == activityId && s.endAt == null,
-      orElse: () => Session(id: -1, activityId: -1, startAt: DateTime(1900)),
-    );
-    if (existing.id != -1) {
-      await stopSessionByActivity(activityId);
+  Future<Activity?> getActivity(int id) async {
+    try {
+      return _activities.firstWhere((x) => x.id == id);
+    } catch (_) {
+      return null;
     }
+  }
+
+  Future<Activity?> updateActivity(Activity a) async {
+    if (a.id == null) return null;
+    final idx = _activities.indexWhere((x) => x.id == a.id);
+    if (idx == -1) return null;
+    _activities[idx] = a;
+    return a;
+  }
+
+  Future<int> deleteActivity(int id) async {
+    final before = _activities.length;
+    _activities.removeWhere((x) => x.id == id);
+    // on supprime aussi les sessions liées (et pauses)
+    _sessions.removeWhere((s) => s.activityId == id);
+    final removedPausesIds = _sessions.map((s) => s.id).toSet();
+    _pauses.removeWhere((p) => removedPausesIds.contains(p.sessionId));
+    return before - _activities.length;
+  }
+
+  // ---------- SESSIONS ----------
+  Future<Session?> getRunningSession(int activityId) async {
+    try {
+      return _sessions.firstWhere(
+            (s) => s.activityId == activityId && s.endAt == null,
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<Session> startSession(int activityId) async {
+    // Si une session est déjà en cours pour cette activité, on renvoie celle-là
+    final running = await getRunningSession(activityId);
+    if (running != null) return running;
 
     final now = DateTime.now();
     final s = Session(
@@ -73,218 +96,205 @@ class DatabaseService {
     return s;
   }
 
-  /// Renvoie la session en cours pour une activité (ou null).
-  Future<Session?> getRunningSession(int activityId) async {
-    try {
-      return _sessions.firstWhere(
-            (s) => s.activityId == activityId && s.endAt == null,
+  /// Pause/Unpause: si une pause en cours -> la terminer, sinon en démarrer une.
+  Future<Pause?> togglePauseByActivity(int activityId) async {
+    final running = await getRunningSession(activityId);
+    if (running == null) return null;
+    return togglePause(running.id);
+  }
+
+  Future<Pause?> togglePause(int sessionId) async {
+    // y a-t-il une pause ouverte ?
+    final open = _pauses.where((p) => p.sessionId == sessionId && p.endAt == null);
+    if (open.isNotEmpty) {
+      // on clôt la pause
+      final p = open.first;
+      final updated = Pause(
+        id: p.id,
+        sessionId: p.sessionId,
+        startAt: p.startAt,
+        endAt: DateTime.now(),
       );
+      final idx = _pauses.indexWhere((x) => x.id == p.id);
+      _pauses[idx] = updated;
+      return updated;
+    } else {
+      // on ouvre une nouvelle pause
+      final newP = Pause(
+        id: _nextPauseId++,
+        sessionId: sessionId,
+        startAt: DateTime.now(),
+        endAt: null,
+      );
+      _pauses.add(newP);
+      return newP;
+    }
+  }
+
+  Future<Session?> stopSessionByActivity(int activityId) async {
+    final running = await getRunningSession(activityId);
+    if (running == null) return null;
+    return stopSession(running.id);
+  }
+
+  Future<Session?> stopSession(int sessionId) async {
+    try {
+      final s = _sessions.firstWhere((x) => x.id == sessionId);
+      if (s.endAt != null) return s; // déjà stoppée
+      final updated = Session(
+        id: s.id,
+        activityId: s.activityId,
+        startAt: s.startAt,
+        endAt: DateTime.now(),
+      );
+      final idx = _sessions.indexWhere((x) => x.id == s.id);
+      _sessions[idx] = updated;
+      return updated;
     } catch (_) {
       return null;
     }
   }
 
-  /// Bascule pause/reprise pour une session (par id).
-  Future<void> togglePause(int sessionId) async {
-    final session = _sessions.firstWhere((s) => s.id == sessionId);
-    if (session.endAt != null) return; // déjà terminée
-
-    // y a-t-il une pause ouverte ?
-    try {
-      final open = _pauses.firstWhere(
-            (p) => p.sessionId == sessionId && p.endAt == null,
-      );
-      // on ferme la pause
-      final idx = _pauses.indexOf(open);
-      _pauses[idx] = Pause(
-        id: open.id,
-        sessionId: open.sessionId,
-        startAt: open.startAt,
-        endAt: DateTime.now(),
-      );
-    } catch (_) {
-      // pas de pause ouverte -> on en ouvre une
-      _pauses.add(
-        Pause(
-          id: _nextPauseId++,
-          sessionId: sessionId,
-          startAt: DateTime.now(),
-          endAt: null,
-        ),
-      );
-    }
+  // ---------- QUERIES ----------
+  Future<List<Session>> getSessionsForActivity(int activityId) async {
+    return _sessions
+        .where((s) => s.activityId == activityId)
+        .toList(growable: false)
+      ..sort((a, b) => (b.startAt).compareTo(a.startAt));
   }
 
-  /// Bascule pause/reprise par activité (pratique côté UI).
-  Future<void> togglePauseByActivity(int activityId) async {
-    final s = await getRunningSession(activityId);
-    if (s == null) return;
-    await togglePause(s.id);
-  }
-
-  /// Stoppe une session (par id) en fermant toute pause ouverte.
-  Future<void> stopSession(int sessionId) async {
-    final idx = _sessions.indexWhere((s) => s.id == sessionId);
-    if (idx == -1) return;
-
-    final current = _sessions[idx];
-    if (current.endAt != null) return;
-
-    // Fermer pause ouverte s’il y en a une
-    final openPauseIdx = _pauses.indexWhere(
-          (p) => p.sessionId == sessionId && p.endAt == null,
-    );
-    if (openPauseIdx != -1) {
-      final open = _pauses[openPauseIdx];
-      _pauses[openPauseIdx] = Pause(
-        id: open.id,
-        sessionId: open.sessionId,
-        startAt: open.startAt,
-        endAt: DateTime.now(),
-      );
-    }
-
-    _sessions[idx] = Session(
-      id: current.id,
-      activityId: current.activityId,
-      startAt: current.startAt,
-      endAt: DateTime.now(),
-    );
-  }
-
-  /// Stoppe la session en cours pour l’activité.
-  Future<void> stopSessionByActivity(int activityId) async {
-    final s = await getRunningSession(activityId);
-    if (s == null) return;
-    await stopSession(s.id);
-  }
-
-  // ----------------------------------------------------
-  // QUERIES / STATS (helpers)
-  // ----------------------------------------------------
-
-  /// Sessions entre deux dates (inclusif/exclusif), filtre optionnel activité.
   Future<List<Session>> getSessionsBetween(
       DateTime start,
       DateTime end, {
         int? activityId,
       }) async {
-    final safeEnd = end.isAfter(start) ? end : start;
     final list = _sessions.where((s) {
-      if (activityId != null && s.activityId != activityId) return false;
       final sEnd = s.endAt ?? DateTime.now();
-      // Intersections: [startAt, endAt] intersecte [start, safeEnd]
       final overlap =
-      !(sEnd.isBefore(start) || s.startAt.isAfter(safeEnd));
-      return overlap;
-    }).toList();
-
-    // On renvoie une copie
-    return List<Session>.unmodifiable(list);
+          (s.startAt.isBefore(end) || s.startAt.isAtSameMomentAs(end)) &&
+              (sEnd.isAfter(start) || sEnd.isAtSameMomentAs(start));
+      return overlap && (activityId == null || s.activityId == activityId);
+    }).toList(growable: false);
+    list.sort((a, b) => a.startAt.compareTo(b.startAt));
+    return list;
   }
 
-  /// Minutes actives (sans pauses) pour une session.
-  int _activeMinutesForSession(Session s) {
+  // Durée active d’une session, en minutes (pauses soustraites)
+  int _activeMinutes(Session s) {
     final end = s.endAt ?? DateTime.now();
     var total = end.difference(s.startAt).inMinutes;
-
-    // soustraire les pauses
-    final pauses = _pauses.where((p) => p.sessionId == s.id).toList();
+    // Soustraire les pauses de cette session
+    final pauses = _pauses.where((p) => p.sessionId == s.id);
     for (final p in pauses) {
-      final pend = p.endAt ?? DateTime.now();
-      final mins = pend.difference(p.startAt).inMinutes;
-      total -= mins;
+      final pEnd = p.endAt ?? DateTime.now();
+      total -= pEnd.difference(p.startAt).inMinutes;
     }
-    if (total < 0) total = 0;
-    return total;
+    return total < 0 ? 0 : total;
   }
 
-  /// Minutes actives pour une journée (toutes activités ou une seule).
-  Future<int> minutesForDay(DateTime day, {int? activityId}) async {
+  Future<int> minutesForDay(DateTime day, int activityId) async {
     final start = DateTime(day.year, day.month, day.day);
     final end = start.add(const Duration(days: 1));
+    final sess = await getSessionsBetween(start, end, activityId: activityId);
+    return sess.fold<int>(0, (sum, s) => sum + _activeMinutes(s));
+  }
 
-    final sessions = await getSessionsBetween(start, end, activityId: activityId);
-    var sum = 0;
-    for (final s in sessions) {
-      // On rogne la session à la fenêtre [start, end)
-      final sStart = s.startAt.isBefore(start) ? start : s.startAt;
-      final sEnd = (s.endAt ?? DateTime.now()).isAfter(end) ? end : (s.endAt ?? DateTime.now());
+  Future<int> minutesForWeek(DateTime anchor, int activityId) async {
+    // Lundi comme début de semaine
+    final dayOfWeek = (anchor.weekday + 6) % 7; // 0 lundi … 6 dimanche
+    final start = DateTime(anchor.year, anchor.month, anchor.day).subtract(Duration(days: dayOfWeek));
+    final end = start.add(const Duration(days: 7));
+    final sess = await getSessionsBetween(start, end, activityId: activityId);
+    return sess.fold<int>(0, (sum, s) => sum + _activeMinutes(s));
+  }
 
-      var minutes = sEnd.difference(sStart).inMinutes;
+  /// 24 buckets (0..23) de minutes actives pour un jour donné
+  Future<List<int>> hourlyActiveMinutes(DateTime day, int activityId) async {
+    final start = DateTime(day.year, day.month, day.day);
+    final end = start.add(const Duration(days: 1));
+    final sess = await getSessionsBetween(start, end, activityId: activityId);
 
-      // retirer pauses qui intersectent [start, end)
-      final pauses = _pauses.where((p) => p.sessionId == s.id);
-      for (final p in pauses) {
-        final pStart = p.startAt.isBefore(start) ? start : p.startAt;
-        final pEnd = (p.endAt ?? DateTime.now()).isAfter(end) ? end : (p.endAt ?? DateTime.now());
-        if (!pEnd.isBefore(sStart) && !pStart.isAfter(sEnd)) {
-          final overlapStart = pStart.isAfter(sStart) ? pStart : sStart;
-          final overlapEnd = pEnd.isBefore(sEnd) ? pEnd : sEnd;
-          final overlap = overlapEnd.difference(overlapStart).inMinutes;
-          minutes -= overlap;
+    final buckets = List<int>.filled(24, 0);
+    for (final s in sess) {
+      // on itère minute par minute pour bucketiser (simple mais suffisant ici)
+      var from = s.startAt.isBefore(start) ? start : s.startAt;
+      final until = (s.endAt ?? DateTime.now()).isAfter(end) ? end : (s.endAt ?? DateTime.now());
+
+      // enlève les périodes en pause
+      final pauses = _pauses.where((p) => p.sessionId == s.id).toList();
+      DateTime cursor = from;
+
+      // Fonction utilitaire pour ajouter minutes actives entre [a,b[
+      void addRange(DateTime a, DateTime b) {
+        var t = a;
+        while (t.isBefore(b)) {
+          final hour = t.hour;
+          buckets[hour] += 1;
+          t = t.add(const Duration(minutes: 1));
         }
       }
 
-      if (minutes < 0) minutes = 0;
-      sum += minutes;
-    }
-    return sum;
-  }
-
-  /// Minutes actives cumulées sur la semaine du [date] (ISO : lundi->dimanche).
-  Future<int> minutesForWeek(DateTime date, int activityId) async {
-    final monday = date.subtract(Duration(days: (date.weekday - 1)));
-    var total = 0;
-    for (var i = 0; i < 7; i++) {
-      total += await minutesForDay(monday.add(Duration(days: i)), activityId: activityId);
-    }
-    return total;
-  }
-
-  /// Minutes actives par heure (24 cases) pour affichage en barres ce jour-là.
-  Future<List<int>> hourlyActiveMinutes(DateTime day, {int? activityId}) async {
-    final start = DateTime(day.year, day.month, day.day);
-    final end = start.add(const Duration(days: 1));
-    final buckets = List<int>.filled(24, 0);
-
-    final sessions = await getSessionsBetween(start, end, activityId: activityId);
-
-    // On découpe les sessions sur les heures (approx : par minute)
-    for (final s in sessions) {
-      final sStart = s.startAt.isBefore(start) ? start : s.startAt;
-      final sEnd = (s.endAt ?? DateTime.now()).isAfter(end) ? end : (s.endAt ?? DateTime.now());
-
-      // Liste des minutes "actives" (sans pause)
-      final activeMinutes = <DateTime>[];
-      var cursor = sStart;
-      while (cursor.isBefore(sEnd)) {
-        // si cette minute est dans une pause -> on saute
-        final paused = _pauses.any((p) {
-          if (p.sessionId != s.id) return false;
-          final pStart = p.startAt;
-          final pEnd = p.endAt ?? DateTime.now();
-          return !(pEnd.isBefore(cursor) || pStart.isAfter(cursor.add(const Duration(minutes: 1))));
-        });
-        if (!paused) activeMinutes.add(cursor);
-        cursor = cursor.add(const Duration(minutes: 1));
+      // On déduit chaque pause
+      for (final p in pauses) {
+        final pFrom = p.startAt.isBefore(start) ? start : p.startAt;
+        final pTo = (p.endAt ?? DateTime.now()).isAfter(end) ? end : (p.endAt ?? DateTime.now());
+        if (pTo.isAfter(pFrom)) {
+          // ajouter temps actif avant la pause
+          if (pFrom.isAfter(cursor)) addRange(cursor, pFrom);
+          // sauter la pause
+          cursor = pTo.isAfter(cursor) ? pTo : cursor;
+        }
       }
-
-      for (final m in activeMinutes) {
-        final h = m.hour;
-        buckets[h] = buckets[h] + 1;
-      }
+      // Finir la partie après la dernière pause
+      if (until.isAfter(cursor)) addRange(cursor, until);
     }
-
     return buckets;
   }
 
-  // ----------------------------------------------------
-  // UTILS / DEBUG
-  // ----------------------------------------------------
+  // ---------- EXPORT / RESET (stub pour le moment) ----------
+  Future<String> exportJson() async {
+    final data = {
+      'activities': _activities.map((a) => a.toMap()).toList(),
+      'sessions': _sessions.map((s) => s.toMap()).toList(),
+      'pauses': _pauses.map((p) => p.toMap()).toList(),
+    };
+    return jsonEncode(data);
+  }
 
-  /// Reset complet (utile pendant le dev).
-  Future<void> resetAll() async {
+  // (Optionnel) on implémentera l’import plus tard
+  Future<void> importJson(String content) async {
+    final map = jsonDecode(content) as Map<String, dynamic>;
+    // nettoyage
+    _activities.clear();
+    _sessions.clear();
+    _pauses.clear();
+    _nextActivityId = 1;
+    _nextSessionId = 1;
+    _nextPauseId = 1;
+
+    final acts = (map['activities'] as List?) ?? [];
+    for (final m in acts) {
+      final a = Activity.fromMap(Map<String, dynamic>.from(m));
+      _activities.add(a);
+      _nextActivityId = a.id != null ? (_nextActivityId > a.id! ? _nextActivityId : a.id! + 1) : _nextActivityId;
+    }
+
+    final sess = (map['sessions'] as List?) ?? [];
+    for (final m in sess) {
+      final s = Session.fromMap(Map<String, dynamic>.from(m));
+      _sessions.add(s);
+      _nextSessionId = _nextSessionId > s.id ? _nextSessionId : s.id + 1;
+    }
+
+    final paus = (map['pauses'] as List?) ?? [];
+    for (final m in paus) {
+      final p = Pause.fromMap(Map<String, dynamic>.from(m));
+      _pauses.add(p);
+      _nextPauseId = _nextPauseId > p.id ? _nextPauseId : p.id + 1;
+    }
+  }
+
+  Future<void> resetDatabase() async {
     _activities.clear();
     _sessions.clear();
     _pauses.clear();
@@ -292,4 +302,7 @@ class DatabaseService {
     _nextSessionId = 1;
     _nextPauseId = 1;
   }
+
+  // Pour la page settings (stub)
+  Future<String> databasePath() async => 'in-memory';
 }

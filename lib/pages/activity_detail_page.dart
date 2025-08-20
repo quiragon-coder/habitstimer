@@ -1,153 +1,86 @@
 import 'package:flutter/material.dart';
-import '../models/activity.dart';
+import 'package:habits_timer/models/activity.dart';
+import 'package:habits_timer/services/database_service.dart';
 
-class ActivityDetailPage extends StatelessWidget {
+class ActivityDetailPage extends StatefulWidget {
   final Activity activity;
+  const ActivityDetailPage({super.key, required this.activity});
 
-  const ActivityDetailPage({Key? key, required this.activity}) : super(key: key);
+  @override
+  State<ActivityDetailPage> createState() => _ActivityDetailPageState();
+}
+
+class _ActivityDetailPageState extends State<ActivityDetailPage> {
+  final _db = DatabaseService();
 
   @override
   Widget build(BuildContext context) {
-    final color = Color(activity.color);
+    final a = widget.activity;
 
     return Scaffold(
       appBar: AppBar(
-        title: Row(
-          children: [
-            Text(activity.emoji, style: const TextStyle(fontSize: 22)),
-            const SizedBox(width: 8),
-            Flexible(
-              child: Text(
-                activity.name,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-          ],
-        ),
+        title: Text('${a.emoji}  ${a.name}'),
       ),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          // Hero card (couleur + emoji + nom)
-          Container(
-            decoration: BoxDecoration(
-              color: color,
-              borderRadius: BorderRadius.circular(16),
-            ),
-            padding: const EdgeInsets.all(16),
-            child: Row(
-              children: [
-                Text(
-                  activity.emoji,
-                  style: const TextStyle(fontSize: 42),
-                ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: Text(
-                    activity.name,
-                    style: const TextStyle(
-                      fontSize: 22,
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 16),
+      body: FutureBuilder<List>(
+        future: _db.getSessionsForActivity(a.id!),
+        builder: (_, snap) {
+          if (!snap.hasData) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          final sessions = snap.data!;
+          if (sessions.isEmpty) {
+            return const Center(child: Text("Aucune session pour le moment."));
+          }
 
-          // Objectifs
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: _Goals(activity: activity),
-            ),
-          ),
-          const SizedBox(height: 16),
-
-          // Graphique placeholder (à brancher plus tard)
-          Card(
-            child: SizedBox(
-              height: 180,
-              child: Center(
-                child: Text(
-                  "Graphiques à venir (jour / semaine / mois / année)",
-                  style: TextStyle(
-                    color: Theme.of(context).textTheme.bodySmall?.color,
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(height: 16),
-
-          // Historique placeholder (à brancher plus tard)
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Text(
-                "Historique des sessions (début → fin, durée)\n"
-                    "— À connecter quand les méthodes SQLite seront finalisées —",
-                style: Theme.of(context).textTheme.bodyMedium,
-              ),
-            ),
-          ),
-        ],
+          return ListView.builder(
+            padding: const EdgeInsets.all(12),
+            itemCount: sessions.length,
+            itemBuilder: (_, i) {
+              final s = sessions[i];
+              final end = s.endAt ?? DateTime.now();
+              final mins = end.difference(s.startAt).inMinutes;
+              return ListTile(
+                leading: const Icon(Icons.history),
+                title: Text('${_fmtTime(s.startAt)} → ${_fmtTime(end)}'),
+                subtitle: Text('$mins min'),
+              );
+            },
+          );
+        },
       ),
-    );
-  }
-}
-
-class _Goals extends StatelessWidget {
-  const _Goals({required this.activity});
-
-  final Activity activity;
-
-  @override
-  Widget build(BuildContext context) {
-    final rows = <Widget>[];
-
-    void addRow(String label, int? minutes) {
-      if (minutes == null) return;
-      rows.add(
-        Padding(
-          padding: const EdgeInsets.symmetric(vertical: 6),
+      bottomNavigationBar: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 6, 16, 16),
           child: Row(
             children: [
-              const Icon(Icons.flag, size: 18),
-              const SizedBox(width: 8),
-              Text(
-                "$label : ",
-                style: const TextStyle(fontWeight: FontWeight.w600),
+              Expanded(
+                child: FilledButton.icon(
+                  onPressed: () async {
+                    await _db.startSession(a.id!);
+                    if (mounted) setState(() {});
+                  },
+                  icon: const Icon(Icons.play_arrow),
+                  label: const Text("Start"),
+                ),
               ),
-              Text("$minutes min"),
+              const SizedBox(width: 12),
+              Expanded(
+                child: FilledButton.tonalIcon(
+                  onPressed: () async {
+                    await _db.stopSessionByActivity(a.id!);
+                    if (mounted) setState(() {});
+                  },
+                  icon: const Icon(Icons.stop),
+                  label: const Text("Stop"),
+                ),
+              ),
             ],
           ),
         ),
-      );
-    }
-
-    addRow("Objectif / jour", activity.goalMinutesPerDay);
-    addRow("Objectif / semaine", activity.goalMinutesPerWeek);
-    addRow("Objectif / mois", activity.goalMinutesPerMonth);
-    addRow("Objectif / an", activity.goalMinutesPerYear);
-
-    if (rows.isEmpty) {
-      return const Text("Aucun objectif défini");
-    }
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          "Objectifs",
-          style: Theme.of(context).textTheme.titleMedium,
-        ),
-        const SizedBox(height: 8),
-        ...rows,
-      ],
+      ),
     );
   }
+
+  String _two(int n) => n.toString().padLeft(2, '0');
+  String _fmtTime(DateTime t) => '${_two(t.hour)}:${_two(t.minute)}';
 }
