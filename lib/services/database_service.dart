@@ -207,8 +207,8 @@ class DatabaseService {
       final totalRanges = _subtractPauses(realStart, realEnd, pauses);
 
       for (final range in totalRanges) {
-        final rs = range.item1;
-        final re = range.item2;
+        final rs = range.$1;
+        final re = range.$2;
         // Dispatch dans les heures
         var cursor = DateTime(rs.year, rs.month, rs.day, rs.hour);
         while (cursor.isBefore(re)) {
@@ -242,7 +242,7 @@ class DatabaseService {
       final pauses = _pauses.where((p) => p.sessionId == s.id).toList();
       final ranges = _subtractPauses(realStart, realEnd, pauses);
       for (final r in ranges) {
-        total += r.item2.difference(r.item1).inMinutes;
+        total += r.$2.difference(r.$1).inMinutes;
       }
     }
     return total;
@@ -310,8 +310,8 @@ class DatabaseService {
       final newRanges = <(_D, _D)>[];
 
       for (final r in ranges) {
-        final rs = r.item1;
-        final re = r.item2;
+        final rs = r.$1;
+        final re = r.$2;
 
         // Pas de recouvrement
         if (pEnd.isBefore(rs) || pStart.isAfter(re)) {
@@ -337,7 +337,7 @@ class DatabaseService {
     }
 
     // Éliminer ranges inversés / vides
-    return ranges.where((r) => r.item2.isAfter(r.item1)).toList();
+    return ranges.where((r) => r.$2.isAfter(r.$1)).toList();
   }
 }
 

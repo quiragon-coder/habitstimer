@@ -16,7 +16,7 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
       title: 'Habits Timer',
       theme: ThemeData(useMaterial3: true, colorSchemeSeed: Colors.blue),
-      home: const ActivitiesListPage(),
+      home: ActivitiesListPage(),
       routes: {
         '/heatmap': (_) => const AnnualHeatmapPage(),
         '/settings': (_) => const SettingsPage(),
