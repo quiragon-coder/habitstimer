@@ -13,11 +13,19 @@ class WeeklyBarsChart extends StatelessWidget {
     final groups = <BarChartGroupData>[];
     for (int i = 0; i < data.length; i++) {
       final d = data[i];
-      groups.add(BarChartGroupData(
-        x: i,
-        barRods: [BarChartRodData(toY: d.minutes.toDouble(), width: 14, borderRadius: BorderRadius.circular(4))],
-        showingTooltipIndicators: const [0],
-      ));
+      groups.add(
+        BarChartGroupData(
+          x: i,
+          barRods: [
+            BarChartRodData(
+              toY: d.minutes.toDouble(),
+              width: 14,
+              borderRadius: BorderRadius.circular(4),
+            )
+          ],
+          showingTooltipIndicators: const [0],
+        ),
+      );
     }
 
     return SizedBox(
@@ -25,23 +33,32 @@ class WeeklyBarsChart extends StatelessWidget {
       child: BarChart(
         BarChartData(
           barGroups: groups,
-          gridData: FlGridData(show: false),
+          gridData: const FlGridData(show: false),
           borderData: FlBorderData(show: false),
           titlesData: FlTitlesData(
-            leftTitles: AxisTitles(sideTitles: SideTitles(showTitles: true, reservedSize: 36)),
-            bottomTitles: AxisTitles(sideTitles: SideTitles(
-              showTitles: true,
-              getTitlesWidget: (value, meta) {
-                final i = value.toInt();
-                if (i < 0 || i >= data.length) return const SizedBox.shrink();
-                return Padding(
-                  padding: const EdgeInsets.only(top: 8),
-                  child: Text(df.format(data[i].day), style: const TextStyle(fontSize: 10)),
-                );
-              },
-            )),
-            rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-            topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+            leftTitles: AxisTitles(
+                sideTitles:
+                SideTitles(showTitles: true, reservedSize: 36)),
+            bottomTitles: AxisTitles(
+              sideTitles: SideTitles(
+                showTitles: true,
+                getTitlesWidget: (value, meta) {
+                  final i = value.toInt();
+                  if (i < 0 || i >= data.length) {
+                    return const SizedBox.shrink();
+                  }
+                  return Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Text(df.format(data[i].day),
+                        style: const TextStyle(fontSize: 10)),
+                  );
+                },
+              ),
+            ),
+            rightTitles:
+            const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+            topTitles:
+            const AxisTitles(sideTitles: SideTitles(showTitles: false)),
           ),
           barTouchData: BarTouchData(enabled: true),
         ),

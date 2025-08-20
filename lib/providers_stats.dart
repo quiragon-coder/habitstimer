@@ -1,33 +1,31 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'models/stats.dart';
 
-// STUB de stats provisoire : renvoie des valeurs neutres pour débloquer la compilation.
-// On reconnectera aux vraies données DB ensuite, proprement.
+/// STUB de stats provisoire : valeurs neutres pour débloquer la compilation.
+/// On reconnectera aux vraies données DB plus tard (dans un service dédié).
 
-class DailyStat {
-  final DateTime day;
-  final int minutes;
-  const DailyStat({required this.day, required this.minutes});
-}
-
-class HourlyBucket {
-  final int hour;
-  final int minutes;
-  const HourlyBucket({required this.hour, required this.minutes});
-}
-
-final statsTodayProvider = FutureProvider.family<int, String>((ref, activityId) async {
+// minutes du jour pour une activité (clé = id quelconque: int, String, etc.)
+final statsTodayProvider =
+FutureProvider.family<int, Object?>((ref, activityKey) async {
   return 0;
 });
 
-final statsLast7DaysProvider = FutureProvider.family<List<DailyStat>, String>((ref, activityId) async {
+// derniers 7 jours (liste de DailyStat)
+final statsLast7DaysProvider =
+FutureProvider.family<List<DailyStat>, Object?>((ref, activityKey) async {
   final today = DateTime.now();
-  final start = DateTime(today.year, today.month, today.day).subtract(const Duration(days: 6));
+  final start = DateTime(today.year, today.month, today.day)
+      .subtract(const Duration(days: 6));
   return List.generate(7, (i) {
-    final d = DateTime(start.year, start.month, start.day).add(Duration(days: i));
+    final d = DateTime(start.year, start.month, start.day)
+        .add(Duration(days: i));
     return DailyStat(day: d, minutes: 0);
   });
 });
 
-final hourlyTodayProvider = FutureProvider.family<List<HourlyBucket>, String>((ref, activityId) async {
-  return List.generate(24, (h) => HourlyBucket(hour: h, minutes: 0));
-});
+// répartition horaire (24 buckets)
+final hourlyTodayProvider =
+FutureProvider.family<List<HourlyBucket>, Object?>(
+        (ref, activityKey) async {
+      return List.generate(24, (h) => HourlyBucket(hour: h, minutes: 0));
+    });
