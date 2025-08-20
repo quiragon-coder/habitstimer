@@ -59,6 +59,9 @@ class _ActivityDetailPageState extends State<ActivityDetailPage> {
           const SizedBox(height: 8),
           ActivityStatsPanel(activity: activity),
 
+          const SizedBox(height: 8),
+          ActivityStatsPanel(activity: activity),
+
               Expanded(
                 child: FilledButton.icon(
                   onPressed: () async {
@@ -90,4 +93,5 @@ class _ActivityDetailPageState extends State<ActivityDetailPage> {
   String _two(int n) => n.toString().padLeft(2, '0');
   String _fmtTime(DateTime t) => '${_two(t.hour)}:${_two(t.minute)}';
 }
+
 

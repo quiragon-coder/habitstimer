@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:habitstimer/models/activity.dart';
-import 'package:habitstimer/widgets/hourly_bars_chart.dart';
-import 'package:habitstimer/widgets/weekly_bars_chart.dart';
-import 'package:habitstimer/providers_stats.dart';
+
+import '../models/activity.dart';
+import '../providers_stats.dart';
+import 'hourly_bars_chart.dart';
+import 'weekly_bars_chart.dart';
 
 class ActivityStatsPanel extends ConsumerWidget {
   final Activity activity;

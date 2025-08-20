@@ -1,28 +1,15 @@
-# EXÉCUTION :
-#   1) Ouvrir PowerShell dans le dossier du repo (là où il y a pubspec.yaml)
-#   2) .\apply-palierB.ps1
-#   3) Lancer ensuite: flutter pub get && flutter run
-
 # ==========================
-# apply-palierB.ps1
+# apply-palierB.ps1 (auto-root)
 # ==========================
 $ErrorActionPreference = "Stop"
-
+Set-Location -Path $PSScriptRoot
 function Write-Title($t) { Write-Host "==> $t" -ForegroundColor Cyan }
 
-# 0) Vérifs de base
-if (-not (Test-Path "pubspec.yaml")) {
-  Write-Error "pubspec.yaml introuvable. Lance le script depuis la racine du projet Flutter."
-}
+if (-not (Test-Path "pubspec.yaml")) { Write-Error "pubspec.yaml introuvable. Place ce script à la racine du projet." }
 
-# 1) Dépendances (fl_chart, intl)
-Write-Title "Mise à jour de pubspec.yaml (fl_chart, intl)"
+Write-Title "Mise à jour pubspec.yaml (fl_chart, intl)"
 $pubspec = Get-Content "pubspec.yaml" -Raw
-
-# Sauvegarde
 Copy-Item "pubspec.yaml" "pubspec.yaml.bak" -Force
-
-# Ajoute les deps si manquantes
 if ($pubspec -notmatch "(?ms)dependencies:\s*[\s\S]*fl_chart:") {
   $pubspec = $pubspec -replace "(?ms)(^dependencies:\s*\n)", "`$1  fl_chart: ^0.69.0`n"
 }
@@ -30,34 +17,30 @@ if ($pubspec -notmatch "(?ms)dependencies:\s*[\s\S]*intl:") {
   $pubspec = $pubspec -replace "(?ms)(^dependencies:\s*\n)", "`$1  intl: ^0.19.0`n"
 }
 Set-Content "pubspec.yaml" $pubspec -NoNewline
-Write-Host "pubspec.yaml mis à jour."
 
-# 2) Arborescences
-Write-Title "Création des dossiers nécessaires"
+Write-Title "Création dossiers"
 New-Item -ItemType Directory -Force -Path "lib\models" | Out-Null
 New-Item -ItemType Directory -Force -Path "lib\widgets" | Out-Null
 
-# 3) Modèles stats
 Write-Title "Création lib/models/stats.dart"
 @'
 import 'package:flutter/foundation.dart';
 
 @immutable
 class DailyStat {
-  final DateTime day; // tronqué à minuit local
-  final int minutes;  // minutes totales sur ce jour
+  final DateTime day;
+  final int minutes;
   const DailyStat({required this.day, required this.minutes});
 }
 
 @immutable
 class HourlyBucket {
-  final int hour;     // 0..23
-  final int minutes;  // minutes effectuées dans cette heure
+  final int hour;
+  final int minutes;
   const HourlyBucket({required this.hour, required this.minutes});
 }
 '@ | Set-Content "lib/models/stats.dart"
 
-# 4) Providers pour stats (Riverpod)
 Write-Title "Création lib/providers_stats.dart"
 @'
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -81,7 +64,6 @@ final hourlyTodayProvider = FutureProvider.family<List<HourlyBucket>, String>((r
 });
 '@ | Set-Content "lib/providers_stats.dart"
 
-# 5) Widgets de graphes
 Write-Title "Création lib/widgets/hourly_bars_chart.dart"
 @'
 import 'package:fl_chart/fl_chart.dart';
@@ -180,7 +162,6 @@ class WeeklyBarsChart extends StatelessWidget {
 }
 '@ | Set-Content "lib/widgets/weekly_bars_chart.dart"
 
-# 6) Panneau de stats (widget autonome)
 Write-Title "Création lib/widgets/activity_stats_panel.dart"
 @'
 import 'package:flutter/material.dart';
@@ -264,19 +245,15 @@ class ActivityStatsPanel extends ConsumerWidget {
 }
 '@ | Set-Content "lib/widgets/activity_stats_panel.dart"
 
-# 7) Extensions du DatabaseService : méthodes de stats
-#    - On ajoute 3 méthodes: minutesForActivityOnDay, last7DaysStats, hourlyDistribution
-#    - On suppose que getSessionsByActivity(String) et getPausesBySession(String) existent.
-#    - Le script injecte proprement avant la dernière '}' de la classe DatabaseService.
-
+# Injection méthodes stats (naïve) dans DatabaseService
 $svcPath = "lib/services/database_service.dart"
-if (-not (Test-Path $svcPath)) {
-  Write-Host "ATTENTION: $svcPath introuvable. Je saute l'injection du service. (Tu pourras déplacer les méthodes dans ton service manuellement.)" -ForegroundColor Yellow
-} else {
-  Write-Title "Injection des méthodes de stats dans $svcPath"
-  $svc = Get-Content $svcPath -Raw
+if (Test-Path $svcPath) {
+  Write-Title "Injection des méthodes stats dans $svcPath"
   Copy-Item $svcPath "$svcPath.bak" -Force
-
+  $svc = Get-Content $svcPath -Raw
+  if ($svc -notmatch "import\s+'package:habitstimer/models/stats.dart';") {
+    $svc = $svc -replace "(?ms)(^import\s+'.+?';)", "`$1`nimport 'package:habitstimer/models/stats.dart';"
+  }
   $methods = @'
   // === Stats helpers ajoutés par Palier B ===
   DateTime _startOfDay(DateTime d) => DateTime(d.year, d.month, d.day);
@@ -365,63 +342,33 @@ if (-not (Test-Path $svcPath)) {
   }
   // === Fin helpers Palier B ===
 '@
-
-  # On tente d'insérer avant la dernière '}' de la classe DatabaseService
-  if ($svc -match "class\s+DatabaseService[^{]*\{") {
-    # Cherche la position de la DERNIÈRE accolade qui ferme la classe
-    $lastBraceIndex = ($svc.LastIndexOf("}"))
-    if ($lastBraceIndex -gt 0) {
-      $svcNew = $svc.Insert($lastBraceIndex, $methods)
-      Set-Content $svcPath $svcNew
-      Write-Host "Méthodes injectées dans DatabaseService."
-    } else {
-      Write-Host "Impossible de localiser la fin de la classe DatabaseService. Fichier laissé intact." -ForegroundColor Yellow
-    }
-  } else {
-    Write-Host "Classe DatabaseService introuvable. Fichier laissé intact." -ForegroundColor Yellow
-  }
+  $lastBrace = $svc.LastIndexOf("}")
+  if ($lastBrace -lt 0) { Write-Error "Impossible de trouver la fin du fichier $svcPath" }
+  $svc = $svc.Insert($lastBrace, $methods)
+  Set-Content $svcPath $svc
+} else {
+  Write-Host "ATTENTION: $svcPath introuvable. Injection ignorée." -ForegroundColor Yellow
 }
 
-# 8) Injection dans ActivityDetailPage : import + ajout du panneau
+# Essayer d’insérer le panneau dans ActivityDetailPage
 $pagePath = "lib/pages/activity_detail_page.dart"
-if (-not (Test-Path $pagePath)) {
-  Write-Host "ATTENTION: $pagePath introuvable. Je ne peux pas insérer visuellement le panneau." -ForegroundColor Yellow
-} else {
-  Write-Title "Mise à jour de $pagePath (import + panneau de stats)"
-
+if (Test-Path $pagePath) {
+  Write-Title "Mise à jour ActivityDetailPage (import + panneau)"
   Copy-Item $pagePath "$pagePath.bak" -Force
   $page = Get-Content $pagePath -Raw
-
-  # Ajoute imports si absents
   if ($page -notmatch "widgets/activity_stats_panel.dart") {
-    $page = $page -replace "(?ms)^import\s+'package:[^;]+;\s*", "`$0import 'package:habitstimer/widgets/activity_stats_panel.dart';`n"
+    $page = $page -replace "(?ms)(^import\s+'.+?';)", "`$1`nimport 'package:habitstimer/widgets/activity_stats_panel.dart';"
   }
-
-  # Essaye d'insérer ActivityStatsPanel dans le premier children: [...]
-  $inserted = $false
-  $pattern = "children\s*:\s*\["
-  $m = [regex]::Match($page, $pattern)
+  $m = [regex]::Match($page, "children\s*:\s*\[")
   if ($m.Success) {
-    $idx = $m.Index + $m.Length
-    $insertion = "`n          const SizedBox(height: 8),`n          ActivityStatsPanel(activity: activity),`n"
-    $page = $page.Insert($idx, $insertion)
-    $inserted = $true
+    $page = $page.Insert($m.Index + $m.Length, "`n          const SizedBox(height: 8),`n          ActivityStatsPanel(activity: widget.activity),`n")
   }
-
   Set-Content $pagePath $page
-  if ($inserted) {
-    Write-Host "Panneau inséré dans la première liste de widgets (children: [...])."
-  } else {
-    Write-Host "Impossible de localiser une liste children: [...]. Le widget a été simplement importé; ajoute ActivityStatsPanel(activity: activity) manuellement dans l'UI." -ForegroundColor Yellow
-  }
+} else {
+  Write-Host "ATTENTION: $pagePath introuvable." -ForegroundColor Yellow
 }
 
-# 9) flutter pub get
-Write-Title "Installation des dépendances (flutter pub get)"
-try {
-  flutter pub get | Write-Host
-} catch {
-  Write-Host "Note: 'flutter pub get' a échoué dans le script. Tu peux l'exécuter manuellement." -ForegroundColor Yellow
-}
+Write-Title "flutter pub get"
+try { flutter pub get | Write-Host } catch { Write-Host "Lance 'flutter pub get' manuellement si besoin." -ForegroundColor Yellow }
 
-Write-Host "`n✅ Palier B: fichiers créés, dépendances ajoutées, panneau de stats prêt. Lance 'flutter run' pour tester." -ForegroundColor Green
+Write-Host "`n✅ Palier B appliqué. Si erreurs d'import/package, lance fix-palierB.ps1." -ForegroundColor Green

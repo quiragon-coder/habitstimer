@@ -1,6 +1,6 @@
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
-import 'package:habitstimer/models/stats.dart';
+import '../models/stats.dart';
 
 class HourlyBarsChart extends StatelessWidget {
   final List<HourlyBucket> data;

@@ -1,7 +1,7 @@
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
-import 'package:habitstimer/models/stats.dart';
 import 'package:intl/intl.dart';
+import '../models/stats.dart';
 
 class WeeklyBarsChart extends StatelessWidget {
   final List<DailyStat> data;

@@ -57,6 +57,9 @@ class _ActivityDetailPageState extends State<ActivityDetailPage> {
           child: Row(
             children: [
           const SizedBox(height: 8),
+          ActivityStatsPanel(activity: widget.activity),
+
+          const SizedBox(height: 8),
           ActivityStatsPanel(activity: activity),
 
           const SizedBox(height: 8),
@@ -93,5 +96,6 @@ class _ActivityDetailPageState extends State<ActivityDetailPage> {
   String _two(int n) => n.toString().padLeft(2, '0');
   String _fmtTime(DateTime t) => '${_two(t.hour)}:${_two(t.minute)}';
 }
+
 
 
