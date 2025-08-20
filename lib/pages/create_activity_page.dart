@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_colorpicker/flutter_colorpicker.dart';
 import '../models/activity.dart';
 import '../services/database_service.dart';
 
@@ -11,184 +10,160 @@ class CreateActivityPage extends StatefulWidget {
 }
 
 class _CreateActivityPageState extends State<CreateActivityPage> {
+  final _formKey = GlobalKey<FormState>();
   final _nameCtrl = TextEditingController();
-  final _db = DatabaseService();
-
-  String _emoji = '⏱️';
+  String _emoji = "⏱️";
   Color _color = const Color(0xFF2196F3);
 
-  // Minutes par défaut (exemples raisonnables)
-  double _goalDay = 60;       // 1 h
-  double _goalWeek = 300;     // 5 h
-  double _goalMonth = 1200;   // 20 h
-  double _goalYear = 14400;   // 240 h
+  int? _goalDay;
+  int? _goalWeek;
+  int? _goalMonth;
+  int? _goalYear;
 
-  // Bornes en minutes
-  static const double _dayMax = 24 * 60.0;       // 1440
-  static const double _weekMax = 7 * 24 * 60.0;  // 10080
-  static const double _monthMax = 31 * 24 * 60.0; // 44640
-  static const double _yearMax = 366 * 24 * 60.0; // 527040
+  final _db = DatabaseService();
 
-  // Pour éviter toute assertion si une valeur dépasse la borne
-  double _clamp(double v, double max) => v.clamp(0, max).toDouble();
-
-  String _minsToLabel(double mins) {
-    final m = mins.round();
-    final h = m ~/ 60;
-    final r = m % 60;
-    if (h == 0) return '$m min';
-    if (r == 0) return '${h}h';
-    return '${h}h${r.toString().padLeft(2, '0')}';
-  }
-
-  Future<void> _pickColor() async {
-    Color temp = _color;
-    await showDialog(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('Choisir une couleur'),
-        content: SingleChildScrollView(
-          child: ColorPicker(
-            pickerColor: temp,
-            onColorChanged: (c) => temp = c,
-            enableAlpha: false,
-            portraitOnly: true,
-          ),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Annuler')),
-          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('OK')),
-        ],
-      ),
-    ).then((ok) {
-      if (ok == true) setState(() => _color = temp);
-    });
+  @override
+  void dispose() {
+    _nameCtrl.dispose();
+    super.dispose();
   }
 
   Future<void> _save() async {
-    final name = _nameCtrl.text.trim();
-    if (name.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Donne un nom à l’activité 🙂')));
-      return;
-    }
-    final activity = Activity(
-      name: name,
+    if (!_formKey.currentState!.validate()) return;
+
+    final act = Activity(
+      name: _nameCtrl.text.trim(),
       emoji: _emoji,
       color: _color.value,
-      goalMinutesPerDay: _clamp(_goalDay, _dayMax).round(),
-      goalMinutesPerWeek: _clamp(_goalWeek, _weekMax).round(),
-      goalMinutesPerMonth: _clamp(_goalMonth, _monthMax).round(),
-      goalMinutesPerYear: _clamp(_goalYear, _yearMax).round(),
+      goalMinutesPerDay: _goalDay,
+      goalMinutesPerWeek: _goalWeek,
+      goalMinutesPerMonth: _goalMonth,
+      goalMinutesPerYear: _goalYear,
     );
-    await _db.addActivity(activity);
+
+    await _db.addActivity(act);              // <-- crée en base
     if (!mounted) return;
-    Navigator.pop(context, activity);
+    Navigator.pop(context, true);            // <-- renvoie "true" pour déclencher le refresh
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Nouvelle activité')),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          // Nom
-          TextField(
-            controller: _nameCtrl,
-            decoration: const InputDecoration(
-              labelText: 'Nom',
-              hintText: 'Ex: Dessin, Sport, Lecture...',
+      appBar: AppBar(title: const Text("Nouvelle activité")),
+      body: Form(
+        key: _formKey,
+        child: ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
+            TextFormField(
+              controller: _nameCtrl,
+              decoration: const InputDecoration(labelText: "Nom"),
+              validator: (v) =>
+              (v == null || v.trim().isEmpty) ? "Saisis un nom" : null,
             ),
-          ),
-          const SizedBox(height: 16),
-
-          // Emoji + Couleur
-          Row(
-            children: [
-              Text('Emoji: ', style: Theme.of(context).textTheme.titleMedium),
-              Text(_emoji, style: const TextStyle(fontSize: 24)),
-              const SizedBox(width: 12),
-              Wrap(
-                spacing: 8,
-                children: ['⏱️','🎨','🏃‍♂️','📚','💻','🎹','🧘','🎮'].map((e) {
-                  final selected = e == _emoji;
-                  return ChoiceChip(
-                    label: Text(e, style: const TextStyle(fontSize: 18)),
-                    selected: selected,
-                    onSelected: (_) => setState(() => _emoji = e),
-                  );
-                }).toList(),
-              ),
-              const Spacer(),
-              InkWell(
-                onTap: _pickColor,
-                child: Container(
-                  width: 36, height: 36,
-                  decoration: BoxDecoration(
-                    color: _color,
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: Colors.black12),
-                  ),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                const Text("Emoji"),
+                const SizedBox(width: 12),
+                Text(_emoji, style: const TextStyle(fontSize: 24)),
+                const Spacer(),
+                IconButton(
+                  icon: const Icon(Icons.emoji_emotions),
+                  onPressed: () async {
+                    // petit choix rapide d’emojis (simple et sans dépendance)
+                    final choices = ["⏱️", "📚", "💪", "✍️", "🎨", "🎹"];
+                    final picked = await showDialog<String>(
+                      context: context,
+                      builder: (c) => SimpleDialog(
+                        title: const Text("Choisir un emoji"),
+                        children: choices
+                            .map((e) => SimpleDialogOption(
+                          onPressed: () => Navigator.pop(c, e),
+                          child: Text(e, style: const TextStyle(fontSize: 24)),
+                        ))
+                            .toList(),
+                      ),
+                    );
+                    if (picked != null) setState(() => _emoji = picked);
+                  },
                 ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 24),
-
-          // Objectif / Jour
-          Text('Objectif par JOUR: ${_minsToLabel(_clamp(_goalDay, _dayMax))}'),
-          Slider(
-            min: 0,
-            max: _dayMax,
-            divisions: _dayMax.toInt(),
-            value: _clamp(_goalDay, _dayMax),
-            label: _minsToLabel(_clamp(_goalDay, _dayMax)),
-            onChanged: (v) => setState(() => _goalDay = v),
-          ),
-          const SizedBox(height: 8),
-
-          // Objectif / Semaine
-          Text('Objectif par SEMAINE: ${_minsToLabel(_clamp(_goalWeek, _weekMax))}'),
-          Slider(
-            min: 0,
-            max: _weekMax,
-            divisions: (_weekMax / 5).round(),
-            value: _clamp(_goalWeek, _weekMax),
-            label: _minsToLabel(_clamp(_goalWeek, _weekMax)),
-            onChanged: (v) => setState(() => _goalWeek = v),
-          ),
-          const SizedBox(height: 8),
-
-          // Objectif / Mois
-          Text('Objectif par MOIS: ${_minsToLabel(_clamp(_goalMonth, _monthMax))}'),
-          Slider(
-            min: 0,
-            max: _monthMax,
-            divisions: (_monthMax / 10).round(),
-            value: _clamp(_goalMonth, _monthMax),
-            label: _minsToLabel(_clamp(_goalMonth, _monthMax)),
-            onChanged: (v) => setState(() => _goalMonth = v),
-          ),
-          const SizedBox(height: 8),
-
-          // Objectif / Année
-          Text('Objectif par ANNÉE: ${_minsToLabel(_clamp(_goalYear, _yearMax))}'),
-          Slider(
-            min: 0,
-            max: _yearMax,
-            divisions: (_yearMax / 60).round(), // pas trop de divisions pour rester fluide
-            value: _clamp(_goalYear, _yearMax),
-            label: _minsToLabel(_clamp(_goalYear, _yearMax)),
-            onChanged: (v) => setState(() => _goalYear = v),
-          ),
-
-          const SizedBox(height: 24),
-          FilledButton.icon(
-            onPressed: _save,
-            icon: const Icon(Icons.check),
-            label: const Text('Créer l’activité'),
-          ),
-        ],
+              ],
+            ),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                const Text("Couleur"),
+                const SizedBox(width: 12),
+                Container(width: 24, height: 24, decoration: BoxDecoration(color: _color, shape: BoxShape.circle)),
+                const Spacer(),
+                IconButton(
+                  icon: const Icon(Icons.color_lens),
+                  onPressed: () async {
+                    // choix simple de couleurs (pour éviter la dépendance colorpicker)
+                    final choices = <Color>[
+                      const Color(0xFF2196F3),
+                      const Color(0xFFE91E63),
+                      const Color(0xFF4CAF50),
+                      const Color(0xFFFF9800),
+                      const Color(0xFF9C27B0),
+                    ];
+                    final picked = await showDialog<Color>(
+                      context: context,
+                      builder: (c) => SimpleDialog(
+                        title: const Text("Choisir une couleur"),
+                        children: choices
+                            .map((col) => SimpleDialogOption(
+                          onPressed: () => Navigator.pop(c, col),
+                          child: Row(
+                            children: [
+                              Container(
+                                width: 22,
+                                height: 22,
+                                decoration: BoxDecoration(color: col, shape: BoxShape.circle),
+                              ),
+                              const SizedBox(width: 12),
+                              Text('#${col.value.toRadixString(16).padLeft(8, '0').toUpperCase()}'),
+                            ],
+                          ),
+                        ))
+                            .toList(),
+                      ),
+                    );
+                    if (picked != null) setState(() => _color = picked);
+                  },
+                )
+              ],
+            ),
+            const SizedBox(height: 16),
+            // Objectifs (saisies rapides en minutes)
+            TextFormField(
+              decoration: const InputDecoration(labelText: "Objectif min/jour (optionnel)"),
+              keyboardType: TextInputType.number,
+              onChanged: (v) => _goalDay = v.isEmpty ? null : int.tryParse(v),
+            ),
+            TextFormField(
+              decoration: const InputDecoration(labelText: "Objectif min/semaine (optionnel)"),
+              keyboardType: TextInputType.number,
+              onChanged: (v) => _goalWeek = v.isEmpty ? null : int.tryParse(v),
+            ),
+            TextFormField(
+              decoration: const InputDecoration(labelText: "Objectif min/mois (optionnel)"),
+              keyboardType: TextInputType.number,
+              onChanged: (v) => _goalMonth = v.isEmpty ? null : int.tryParse(v),
+            ),
+            TextFormField(
+              decoration: const InputDecoration(labelText: "Objectif min/année (optionnel)"),
+              keyboardType: TextInputType.number,
+              onChanged: (v) => _goalYear = v.isEmpty ? null : int.tryParse(v),
+            ),
+            const SizedBox(height: 24),
+            FilledButton(
+              onPressed: _save,
+              child: const Text("Enregistrer"),
+            ),
+          ],
+        ),
       ),
     );
   }
