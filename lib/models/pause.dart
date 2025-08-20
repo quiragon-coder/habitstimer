@@ -1,22 +1,22 @@
-class Session {
+class Pause {
   final int id;
-  final int activityId;
+  final int sessionId;
   final DateTime startAt;
   final DateTime? endAt;
 
-  Session({
+  const Pause({
     required this.id,
-    required this.activityId,
+    required this.sessionId,
     required this.startAt,
     this.endAt,
   });
 
   bool get isRunning => endAt == null;
 
-  factory Session.fromMap(Map<String, dynamic> map) {
-    return Session(
+  factory Pause.fromMap(Map<String, dynamic> map) {
+    return Pause(
       id: map['id'] as int,
-      activityId: map['activityId'] as int,
+      sessionId: map['sessionId'] as int,
       startAt: DateTime.parse(map['startAt'] as String),
       endAt: map['endAt'] != null ? DateTime.parse(map['endAt'] as String) : null,
     );
@@ -25,7 +25,7 @@ class Session {
   Map<String, dynamic> toMap() {
     return {
       'id': id,
-      'activityId': activityId,
+      'sessionId': sessionId,
       'startAt': startAt.toIso8601String(),
       'endAt': endAt?.toIso8601String(),
     };
